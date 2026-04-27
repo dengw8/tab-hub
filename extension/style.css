@@ -237,6 +237,8 @@ header {
   overflow: hidden;
   break-inside: avoid;       /* don't split a card across columns */
   margin-bottom: 12px;       /* vertical spacing (replaces grid gap) */
+  content-visibility: auto;
+  contain-intrinsic-size: 220px;
 }
 
 /* Colored top border instead of side bar for grid cards */
@@ -885,6 +887,270 @@ footer { animation: fadeUp 0.5s ease 0.65s both; }
 
 
 /* ================================================================
+   COMMON SITES
+   ================================================================ */
+
+.favorites-section {
+  margin-bottom: 36px;
+}
+
+.favorites-header {
+  margin-bottom: 16px;
+}
+
+.favorites-header .action-btn {
+  flex-shrink: 0;
+}
+
+.favorites-empty {
+  background: var(--card-bg);
+  border: 1px solid var(--warm-gray);
+  border-radius: 8px;
+  padding: 24px;
+  text-align: center;
+}
+
+.favorites-empty-title {
+  font-family: 'Newsreader', serif;
+  font-size: 22px;
+  font-style: italic;
+  color: var(--ink);
+}
+
+.favorites-empty-subtitle {
+  color: var(--muted);
+  font-size: 13px;
+  margin-top: 6px;
+}
+
+.favorites-empty .action-btn {
+  margin-top: 16px;
+}
+
+.favorites-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+.favorite-item {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+  background: var(--card-bg);
+  border: 1px solid var(--warm-gray);
+  border-radius: 8px;
+  padding: 12px 14px;
+  transition: box-shadow 0.2s ease, transform 0.2s ease, border-color 0.2s ease;
+  content-visibility: auto;
+  contain-intrinsic-size: 72px;
+}
+
+.favorite-item:hover {
+  box-shadow: 0 4px 20px var(--shadow);
+  transform: translateY(-1px);
+}
+
+.favorite-item.dragging {
+  opacity: 0.55;
+}
+
+.favorite-item.drag-over {
+  border-color: var(--accent-amber);
+  background: rgba(200, 113, 58, 0.05);
+}
+
+.favorite-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+  color: var(--ink);
+}
+
+.favorite-main:hover .favorite-name {
+  color: var(--accent-amber);
+}
+
+.favorite-favicon {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.favorite-text {
+  min-width: 0;
+}
+
+.favorite-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink);
+  transition: color 0.15s ease;
+}
+
+.favorite-url {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.favorite-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.favorite-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, opacity 0.15s ease;
+  opacity: 0.45;
+}
+
+.favorite-action svg {
+  width: 15px;
+  height: 15px;
+}
+
+.favorite-action:hover {
+  opacity: 1;
+  background: rgba(154, 145, 138, 0.1);
+}
+
+.favorite-action.edit:hover {
+  color: var(--accent-slate);
+}
+
+.favorite-action.delete:hover {
+  color: var(--status-abandoned);
+}
+
+/* ================================================================
+   FAVORITE MODAL
+   ================================================================ */
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(26, 22, 19, 0.42);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  z-index: 200;
+}
+
+.modal-card {
+  width: min(100%, 460px);
+  background: var(--card-bg);
+  border: 1px solid var(--warm-gray);
+  border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(26, 22, 19, 0.18);
+  padding: 20px;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.modal-header h2 {
+  font-family: 'Newsreader', serif;
+  font-size: 24px;
+  font-style: italic;
+  font-weight: 400;
+  color: var(--ink);
+}
+
+.modal-close {
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.modal-close:hover {
+  background: rgba(154, 145, 138, 0.1);
+  color: var(--ink);
+}
+
+.modal-close svg {
+  width: 16px;
+  height: 16px;
+}
+
+.favorite-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.favorite-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+}
+
+.favorite-input {
+  width: 100%;
+  border: 1px solid var(--warm-gray);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+  padding: 12px 14px;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.favorite-input:focus {
+  border-color: var(--accent-amber);
+  box-shadow: 0 0 0 3px rgba(200, 113, 58, 0.08);
+}
+
+.favorite-error {
+  min-height: 18px;
+  font-size: 12px;
+  color: var(--status-abandoned);
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+/* ================================================================
    SAVED FOR LATER — Checklist Column + Archive
    ================================================================ */
 
@@ -930,6 +1196,8 @@ footer { animation: fadeUp 0.5s ease 0.65s both; }
   padding: 10px 0;
   border-bottom: 1px solid rgba(154, 145, 138, 0.12);
   animation: fadeUp 0.3s ease both;
+  content-visibility: auto;
+  contain-intrinsic-size: 58px;
 }
 
 .deferred-item:last-child {
@@ -1128,6 +1396,8 @@ footer { animation: fadeUp 0.5s ease 0.65s both; }
   gap: 8px;
   padding: 6px 0;
   border-bottom: 1px solid rgba(154, 145, 138, 0.08);
+  content-visibility: auto;
+  contain-intrinsic-size: 32px;
 }
 
 .archive-item:last-child {
@@ -1155,4 +1425,12 @@ footer { animation: fadeUp 0.5s ease 0.65s both; }
   color: var(--muted);
   opacity: 0.6;
   flex-shrink: 0;
+}
+
+body.reduced-motion-heavy .active-section .section-header,
+body.reduced-motion-heavy .active-section .missions .mission-card,
+body.reduced-motion-heavy .deferred-column .section-header,
+body.reduced-motion-heavy .deferred-item,
+body.reduced-motion-heavy footer {
+  animation: none !important;
 }

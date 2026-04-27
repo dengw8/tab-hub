@@ -2,7 +2,7 @@
 
 **Keep tabs on your tabs.**
 
-Tab Out is a Chrome extension that replaces your new tab page with a dashboard of everything you have open. Tabs are grouped by domain, with homepages (Gmail, X, LinkedIn, etc.) pulled into their own group. Close tabs with a satisfying swoosh + confetti.
+Tab Out is a Chrome extension that replaces your new tab page with a dashboard of everything you have open. Tabs are grouped by domain, with homepages (Gmail, X, LinkedIn, etc.) pulled into their own group. You can also pin your own common sites at the top of the page for one-click access. Close tabs with a satisfying swoosh + confetti.
 
 No server. No account. No external API calls. Just a Chrome extension.
 
@@ -23,6 +23,7 @@ The agent will walk you through it. Takes about 1 minute.
 ## Features
 
 - **See all your tabs at a glance** on a clean grid, grouped by domain
+- **Common sites** add your own go-to websites right inside the new tab page
 - **Homepages group** pulls Gmail inbox, X home, YouTube, LinkedIn, GitHub homepages into one card
 - **Close tabs with style** with swoosh sound + confetti burst
 - **Duplicate detection** flags when you have the same page open twice, with one-click cleanup
@@ -61,13 +62,14 @@ You'll see Tab Out.
 ```
 You open a new tab
   -> Tab Out shows your open tabs grouped by domain
-  -> Homepages (Gmail, X, etc.) get their own group at the top
+  -> Your common sites sit at the top for quick access
+  -> Homepages (Gmail, X, etc.) get their own group near the top
   -> Click any tab title to jump to it
   -> Close groups you're done with (swoosh + confetti)
   -> Save tabs for later before closing them
 ```
 
-Everything runs inside the Chrome extension. No external server, no API calls, no data sent anywhere. Saved tabs are stored in `chrome.storage.local`.
+Everything runs inside the Chrome extension. No external server, no API calls, no data sent anywhere. Saved tabs and common sites are stored in `chrome.storage.local`.
 
 ---
 

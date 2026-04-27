@@ -25,6 +25,10 @@
 
 // All open tabs — populated by fetchOpenTabs()
 let openTabs = [];
+let favoriteDragId = null;
+let overflowChipSeq = 0;
+let dashboardRenderRun = 0;
+const overflowChipCache = new Map();
 
 /**
  * fetchOpenTabs()
@@ -281,6 +285,124 @@ async function dismissSavedTab(id) {
     tab.dismissed = true;
     await chrome.storage.local.set({ deferred });
   }
+}
+
+
+/* ----------------------------------------------------------------
+   COMMON SITES — chrome.storage.local
+
+   Stores user-configured shortcuts shown near the top of the new tab
+   page. Each favorite is URL-only; display names are derived at render time.
+   ---------------------------------------------------------------- */
+
+function createFavoriteId() {
+  if (globalThis.crypto && typeof globalThis.crypto.randomUUID === 'function') {
+    return 'fav_' + globalThis.crypto.randomUUID();
+  }
+  return 'fav_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+}
+
+async function getFavorites() {
+  const { favorites = [] } = await chrome.storage.local.get('favorites');
+  if (!Array.isArray(favorites)) return [];
+
+  return favorites
+    .filter(item => item && typeof item.url === 'string')
+    .map(item => ({
+      id: item.id || createFavoriteId(),
+      url: item.url,
+      createdAt: item.createdAt || new Date().toISOString(),
+    }));
+}
+
+async function saveFavorites(favorites) {
+  await chrome.storage.local.set({ favorites });
+}
+
+function normalizeFavoriteUrl(input) {
+  const trimmed = (input || '').trim();
+  if (!trimmed) throw new Error('Enter a URL');
+
+  const lower = trimmed.toLowerCase();
+  const blockedPrefixes = ['chrome://', 'chrome-extension://', 'about:', 'edge://', 'brave://'];
+  const candidate = /^https?:\/\//i.test(trimmed) || blockedPrefixes.some(prefix => lower.startsWith(prefix))
+    ? trimmed
+    : `https://${trimmed}`;
+
+  let parsed;
+  try {
+    parsed = new URL(candidate);
+  } catch {
+    throw new Error('Enter a valid URL');
+  }
+
+  if (isBlockedFavoriteUrl(parsed)) throw new Error('That URL cannot be added');
+  if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('Use a regular website URL');
+
+  return parsed.toString();
+}
+
+function isBlockedFavoriteUrl(parsedUrl) {
+  const protocol = typeof parsedUrl === 'string' ? new URL(parsedUrl).protocol : parsedUrl.protocol;
+  return ['chrome:', 'chrome-extension:', 'about:', 'edge:', 'brave:'].includes(protocol);
+}
+
+async function addFavorite(urlInput) {
+  const favorites = await getFavorites();
+  const url = normalizeFavoriteUrl(urlInput);
+  if (favorites.some(item => item.url === url)) throw new Error('Site already exists');
+
+  favorites.push({
+    id: createFavoriteId(),
+    url,
+    createdAt: new Date().toISOString(),
+  });
+
+  await saveFavorites(favorites);
+}
+
+async function updateFavorite(id, urlInput) {
+  const favorites = await getFavorites();
+  const favorite = favorites.find(item => item.id === id);
+  if (!favorite) throw new Error('Site not found');
+
+  const url = normalizeFavoriteUrl(urlInput);
+  if (favorites.some(item => item.id !== id && item.url === url)) throw new Error('Site already exists');
+
+  favorite.url = url;
+  await saveFavorites(favorites);
+}
+
+async function removeFavorite(id) {
+  const favorites = await getFavorites();
+  const next = favorites.filter(item => item.id !== id);
+  await saveFavorites(next);
+}
+
+async function moveFavorite(draggedId, targetId) {
+  if (!draggedId || !targetId || draggedId === targetId) return false;
+
+  const favorites = await getFavorites();
+  const fromIndex = favorites.findIndex(item => item.id === draggedId);
+  const toIndex = favorites.findIndex(item => item.id === targetId);
+  if (fromIndex === -1 || toIndex === -1) return false;
+
+  const [moved] = favorites.splice(fromIndex, 1);
+  favorites.splice(toIndex, 0, moved);
+  await saveFavorites(favorites);
+  return true;
+}
+
+function scheduleAfterPaint(callback) {
+  requestAnimationFrame(() => requestAnimationFrame(callback));
+}
+
+function scheduleIdleWork(callback) {
+  if ('requestIdleCallback' in window) {
+    window.requestIdleCallback(() => callback(), { timeout: 300 });
+    return;
+  }
+  setTimeout(callback, 0);
 }
 
 
@@ -611,6 +733,15 @@ function capitalize(str) {
   return str.charAt(0).toUpperCase() + str.slice(1);
 }
 
+function escapeHtml(str) {
+  return String(str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function stripTitleNoise(title) {
   if (!title) return '';
   // Strip leading notification count: "(2) Title"
@@ -691,6 +822,35 @@ function smartTitle(title, url) {
   return title || url;
 }
 
+function getFavoriteDisplayName(url) {
+  try {
+    const parsed = new URL(url);
+    return friendlyDomain(parsed.hostname) || parsed.hostname || url;
+  } catch {
+    return url;
+  }
+}
+
+function getFavoriteDisplayUrl(url) {
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname.replace(/^www\./, '');
+    const path = parsed.pathname && parsed.pathname !== '/' ? parsed.pathname : '';
+    return `${host}${path}` || url;
+  } catch {
+    return url;
+  }
+}
+
+function getFavoriteFaviconUrl(url) {
+  try {
+    const hostname = new URL(url).hostname;
+    return `https://www.google.com/s2/favicons?domain=${hostname}&sz=16`;
+  } catch {
+    return '';
+  }
+}
+
 
 /* ----------------------------------------------------------------
    SVG ICON STRINGS
@@ -757,19 +917,24 @@ function checkTabOutDupes() {
    OVERFLOW CHIPS ("+N more" expand button in domain cards)
    ---------------------------------------------------------------- */
 
-function buildOverflowChips(hiddenTabs, urlCounts = {}) {
-  const hiddenChips = hiddenTabs.map(tab => {
-    const label    = cleanTitle(smartTitle(stripTitleNoise(tab.title || ''), tab.url), '');
-    const count    = urlCounts[tab.url] || 1;
-    const dupeTag  = count > 1 ? ` <span class="chip-dupe-badge">(${count}x)</span>` : '';
-    const chipClass = count > 1 ? ' chip-has-dupes' : '';
-    const safeUrl   = (tab.url || '').replace(/"/g, '&quot;');
-    const safeTitle = label.replace(/"/g, '&quot;');
-    let domain = '';
-    try { domain = new URL(tab.url).hostname; } catch {}
-    const faviconUrl = domain ? `https://www.google.com/s2/favicons?domain=${domain}&sz=16` : '';
-    return `<div class="page-chip clickable${chipClass}" data-action="focus-tab" data-tab-url="${safeUrl}" title="${safeTitle}">
-      ${faviconUrl ? `<img class="chip-favicon" src="${faviconUrl}" alt="" onerror="this.style.display='none'">` : ''}
+function renderPageChip(tab, hostname, urlCounts = {}) {
+  let label = cleanTitle(smartTitle(stripTitleNoise(tab.title || ''), tab.url), hostname);
+  try {
+    const parsed = new URL(tab.url);
+    if (parsed.hostname === 'localhost' && parsed.port) label = `${parsed.port} ${label}`;
+  } catch {}
+
+  const count = urlCounts[tab.url] || 1;
+  const dupeTag = count > 1 ? ` <span class="chip-dupe-badge">(${count}x)</span>` : '';
+  const chipClass = count > 1 ? ' chip-has-dupes' : '';
+  const safeUrl = (tab.url || '').replace(/"/g, '&quot;');
+  const safeTitle = label.replace(/"/g, '&quot;');
+  let domain = '';
+  try { domain = new URL(tab.url).hostname; } catch {}
+  const faviconUrl = domain ? `https://www.google.com/s2/favicons?domain=${domain}&sz=16` : '';
+
+  return `<div class="page-chip clickable${chipClass}" data-action="focus-tab" data-tab-url="${safeUrl}" title="${safeTitle}">
+      ${faviconUrl ? `<img class="chip-favicon" src="${faviconUrl}" alt="" loading="lazy" decoding="async" onerror="this.style.display='none'">` : ''}
       <span class="chip-text">${label}</span>${dupeTag}
       <div class="chip-actions">
         <button class="chip-action chip-save" data-action="defer-single-tab" data-tab-url="${safeUrl}" data-tab-title="${safeTitle}" title="Save for later">
@@ -780,10 +945,18 @@ function buildOverflowChips(hiddenTabs, urlCounts = {}) {
         </button>
       </div>
     </div>`;
-  }).join('');
+}
+
+function buildOverflowChips(hiddenTabs, hostname, urlCounts = {}) {
+  const overflowId = 'overflow-' + (++overflowChipSeq);
+  overflowChipCache.set(overflowId, {
+    hiddenTabs: hiddenTabs.map(tab => ({ url: tab.url, title: tab.title })),
+    hostname,
+    urlCounts,
+  });
 
   return `
-    <div class="page-chips-overflow" style="display:none">${hiddenChips}</div>
+    <div class="page-chips-overflow" data-overflow-id="${overflowId}" style="display:none"></div>
     <div class="page-chip page-chip-overflow clickable" data-action="expand-chips">
       <span class="chip-text">+${hiddenTabs.length} more</span>
     </div>`;
@@ -834,34 +1007,8 @@ function renderDomainCard(group) {
   const visibleTabs = uniqueTabs.slice(0, 8);
   const extraCount  = uniqueTabs.length - visibleTabs.length;
 
-  const pageChips = visibleTabs.map(tab => {
-    let label = cleanTitle(smartTitle(stripTitleNoise(tab.title || ''), tab.url), group.domain);
-    // For localhost tabs, prepend port number so you can tell projects apart
-    try {
-      const parsed = new URL(tab.url);
-      if (parsed.hostname === 'localhost' && parsed.port) label = `${parsed.port} ${label}`;
-    } catch {}
-    const count    = urlCounts[tab.url];
-    const dupeTag  = count > 1 ? ` <span class="chip-dupe-badge">(${count}x)</span>` : '';
-    const chipClass = count > 1 ? ' chip-has-dupes' : '';
-    const safeUrl   = (tab.url || '').replace(/"/g, '&quot;');
-    const safeTitle = label.replace(/"/g, '&quot;');
-    let domain = '';
-    try { domain = new URL(tab.url).hostname; } catch {}
-    const faviconUrl = domain ? `https://www.google.com/s2/favicons?domain=${domain}&sz=16` : '';
-    return `<div class="page-chip clickable${chipClass}" data-action="focus-tab" data-tab-url="${safeUrl}" title="${safeTitle}">
-      ${faviconUrl ? `<img class="chip-favicon" src="${faviconUrl}" alt="" onerror="this.style.display='none'">` : ''}
-      <span class="chip-text">${label}</span>${dupeTag}
-      <div class="chip-actions">
-        <button class="chip-action chip-save" data-action="defer-single-tab" data-tab-url="${safeUrl}" data-tab-title="${safeTitle}" title="Save for later">
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0 1 11.186 0Z" /></svg>
-        </button>
-        <button class="chip-action chip-close" data-action="close-single-tab" data-tab-url="${safeUrl}" title="Close this tab">
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
-        </button>
-      </div>
-    </div>`;
-  }).join('') + (extraCount > 0 ? buildOverflowChips(uniqueTabs.slice(8), urlCounts) : '');
+  const pageChips = visibleTabs.map(tab => renderPageChip(tab, group.domain, urlCounts)).join('')
+    + (extraCount > 0 ? buildOverflowChips(uniqueTabs.slice(8), group.domain, urlCounts) : '');
 
   let actionsHtml = `
     <button class="action-btn close-tabs" data-action="close-domain-tabs" data-domain-id="${stableId}">
@@ -894,6 +1041,104 @@ function renderDomainCard(group) {
         <div class="mission-page-label">tabs</div>
       </div>
     </div>`;
+}
+
+
+/* ----------------------------------------------------------------
+   COMMON SITES — Render shortcuts + modal
+   ---------------------------------------------------------------- */
+
+function renderFavoriteItem(item) {
+  const displayName = getFavoriteDisplayName(item.url);
+  const displayUrl = getFavoriteDisplayUrl(item.url);
+  const faviconUrl = getFavoriteFaviconUrl(item.url);
+  const safeId = escapeHtml(item.id);
+  const safeUrl = escapeHtml(item.url);
+
+  return `
+    <div class="favorite-item" data-favorite-id="${safeId}" draggable="true">
+      <a class="favorite-main" href="${safeUrl}" title="${safeUrl}">
+        ${faviconUrl ? `<img class="favorite-favicon" src="${faviconUrl}" alt="" draggable="false" loading="lazy" decoding="async" onerror="this.style.display='none'">` : ''}
+        <div class="favorite-text">
+          <div class="favorite-name">${escapeHtml(displayName)}</div>
+          <div class="favorite-url">${escapeHtml(displayUrl)}</div>
+        </div>
+      </a>
+      <div class="favorite-actions">
+        <button class="favorite-action edit" type="button" data-action="edit-favorite" data-favorite-id="${safeId}" title="Edit site" aria-label="Edit site">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125" /></svg>
+        </button>
+        <button class="favorite-action delete" type="button" data-action="delete-favorite" data-favorite-id="${safeId}" title="Remove site" aria-label="Remove site">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673A2.25 2.25 0 0 1 15.916 21.75H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" /></svg>
+        </button>
+      </div>
+    </div>`;
+}
+
+async function renderFavoritesSection() {
+  const section = document.getElementById('favoritesSection');
+  const empty = document.getElementById('favoritesEmpty');
+  const grid = document.getElementById('favoritesGrid');
+  if (!section || !empty || !grid) return;
+
+  try {
+    const favorites = await getFavorites();
+    section.style.display = 'block';
+
+    if (favorites.length === 0) {
+      empty.style.display = 'block';
+      grid.style.display = 'none';
+      grid.innerHTML = '';
+      return;
+    }
+
+    empty.style.display = 'none';
+    grid.innerHTML = favorites.map(renderFavoriteItem).join('');
+    grid.style.display = 'grid';
+  } catch (err) {
+    console.warn('[tab-out] Could not load favorites:', err);
+    empty.style.display = 'block';
+    grid.style.display = 'none';
+    grid.innerHTML = '';
+  }
+}
+
+function setFavoriteError(message) {
+  const errorEl = document.getElementById('favoriteError');
+  if (!errorEl) return;
+  errorEl.textContent = message || '';
+  errorEl.style.display = message ? 'block' : 'none';
+}
+
+function openFavoriteModal(mode = 'add', item = null) {
+  const modal = document.getElementById('favoriteModal');
+  const titleEl = document.getElementById('favoriteModalTitle');
+  const idInput = document.getElementById('favoriteIdInput');
+  const urlInput = document.getElementById('favoriteUrlInput');
+  if (!modal || !titleEl || !idInput || !urlInput) return;
+
+  titleEl.textContent = mode === 'edit' ? 'Edit site' : 'Add site';
+  idInput.value = item && item.id ? item.id : '';
+  urlInput.value = item && item.url ? item.url : '';
+  setFavoriteError('');
+  modal.style.display = 'flex';
+
+  setTimeout(() => {
+    urlInput.focus();
+    urlInput.select();
+  }, 0);
+}
+
+function closeFavoriteModal() {
+  const modal = document.getElementById('favoriteModal');
+  const form = document.getElementById('favoriteForm');
+  const idInput = document.getElementById('favoriteIdInput');
+  if (!modal || !form || !idInput) return;
+
+  modal.style.display = 'none';
+  form.reset();
+  idInput.value = '';
+  setFavoriteError('');
 }
 
 
@@ -974,7 +1219,7 @@ function renderDeferredItem(item) {
       <input type="checkbox" class="deferred-checkbox" data-action="check-deferred" data-deferred-id="${item.id}">
       <div class="deferred-info">
         <a href="${item.url}" target="_blank" rel="noopener" class="deferred-title" title="${(item.title || '').replace(/"/g, '&quot;')}">
-          <img src="${faviconUrl}" alt="" style="width:14px;height:14px;vertical-align:-2px;margin-right:4px" onerror="this.style.display='none'">${item.title || item.url}
+          <img src="${faviconUrl}" alt="" loading="lazy" decoding="async" style="width:14px;height:14px;vertical-align:-2px;margin-right:4px" onerror="this.style.display='none'">${item.title || item.url}
         </a>
         <div class="deferred-meta">
           <span>${domain}</span>
@@ -1019,15 +1264,18 @@ function renderArchiveItem(item) {
  * 5. Updates footer stats
  * 6. Renders the "Saved for Later" checklist
  */
-async function renderStaticDashboard() {
+function renderDashboardChrome() {
   // --- Header ---
   const greetingEl = document.getElementById('greeting');
   const dateEl     = document.getElementById('dateDisplay');
   if (greetingEl) greetingEl.textContent = getGreeting();
   if (dateEl)     dateEl.textContent     = getDateDisplay();
+}
 
+async function renderMainDashboard(runId) {
   // --- Fetch tabs ---
   await fetchOpenTabs();
+  if (runId !== dashboardRenderRun) return;
   const realTabs = getRealTabs();
 
   // --- Group tabs by domain ---
@@ -1142,6 +1390,8 @@ async function renderStaticDashboard() {
     return b.tabs.length - a.tabs.length;
   });
 
+  document.body.classList.toggle('reduced-motion-heavy', domainGroups.length > 10 || realTabs.length > 40);
+
   // --- Render domain cards ---
   const openTabsSection      = document.getElementById('openTabsSection');
   const openTabsMissionsEl   = document.getElementById('openTabsMissions');
@@ -1149,9 +1399,10 @@ async function renderStaticDashboard() {
   const openTabsSectionTitle = document.getElementById('openTabsSectionTitle');
 
   if (domainGroups.length > 0 && openTabsSection) {
+    const cardsHtml = domainGroups.map(g => renderDomainCard(g)).join('');
     if (openTabsSectionTitle) openTabsSectionTitle.textContent = 'Open tabs';
     openTabsSectionCount.innerHTML = `${domainGroups.length} domain${domainGroups.length !== 1 ? 's' : ''} &nbsp;&middot;&nbsp; <button class="action-btn close-tabs" data-action="close-all-open-tabs" style="font-size:11px;padding:3px 10px;">${ICONS.close} Close all ${realTabs.length} tabs</button>`;
-    openTabsMissionsEl.innerHTML = domainGroups.map(g => renderDomainCard(g)).join('');
+    openTabsMissionsEl.innerHTML = cardsHtml;
     openTabsSection.style.display = 'block';
   } else if (openTabsSection) {
     openTabsSection.style.display = 'none';
@@ -1164,12 +1415,22 @@ async function renderStaticDashboard() {
   // --- Check for duplicate Tab Out tabs ---
   checkTabOutDupes();
 
-  // --- Render "Saved for Later" column ---
-  await renderDeferredColumn();
+  // --- Render "Saved for Later" column after the main tabs paint ---
+  scheduleIdleWork(() => {
+    if (runId !== dashboardRenderRun) return;
+    void renderDeferredColumn();
+  });
 }
 
 async function renderDashboard() {
-  await renderStaticDashboard();
+  const runId = ++dashboardRenderRun;
+  renderDashboardChrome();
+  await renderFavoritesSection();
+
+  scheduleAfterPaint(() => {
+    if (runId !== dashboardRenderRun) return;
+    void renderMainDashboard(runId);
+  });
 }
 
 
@@ -1187,6 +1448,47 @@ document.addEventListener('click', async (e) => {
   if (!actionEl) return;
 
   const action = actionEl.dataset.action;
+
+  if (action === 'open-favorite-modal') {
+    openFavoriteModal('add');
+    return;
+  }
+
+  if (action === 'close-favorite-modal') {
+    closeFavoriteModal();
+    return;
+  }
+
+  if (action === 'edit-favorite') {
+    e.preventDefault();
+    e.stopPropagation();
+    const favoriteId = actionEl.dataset.favoriteId;
+    if (!favoriteId) return;
+
+    const favorites = await getFavorites();
+    const favorite = favorites.find(item => item.id === favoriteId);
+    if (!favorite) return;
+
+    openFavoriteModal('edit', favorite);
+    return;
+  }
+
+  if (action === 'delete-favorite') {
+    e.preventDefault();
+    e.stopPropagation();
+    const favoriteId = actionEl.dataset.favoriteId;
+    if (!favoriteId) return;
+
+    try {
+      await removeFavorite(favoriteId);
+      await renderFavoritesSection();
+      showToast('Site removed');
+    } catch (err) {
+      console.warn('[tab-out] Failed to remove favorite:', err);
+      showToast('Could not remove site');
+    }
+    return;
+  }
 
   // ---- Close duplicate Tab Out tabs ----
   if (action === 'close-tabout-dupes') {
@@ -1208,6 +1510,16 @@ document.addEventListener('click', async (e) => {
   if (action === 'expand-chips') {
     const overflowContainer = actionEl.parentElement.querySelector('.page-chips-overflow');
     if (overflowContainer) {
+      const overflowId = overflowContainer.dataset.overflowId;
+      if (overflowId && overflowContainer.childElementCount === 0) {
+        const cached = overflowChipCache.get(overflowId);
+        if (cached) {
+          overflowContainer.innerHTML = cached.hiddenTabs
+            .map(tab => renderPageChip(tab, cached.hostname, cached.urlCounts))
+            .join('');
+          overflowChipCache.delete(overflowId);
+        }
+      }
       overflowContainer.style.display = 'contents';
       actionEl.remove();
     }
@@ -1473,6 +1785,95 @@ document.addEventListener('input', async (e) => {
   } catch (err) {
     console.warn('[tab-out] Archive search failed:', err);
   }
+});
+
+document.addEventListener('submit', async (e) => {
+  if (e.target.id !== 'favoriteForm') return;
+  e.preventDefault();
+
+  const idInput = document.getElementById('favoriteIdInput');
+  const urlInput = document.getElementById('favoriteUrlInput');
+  if (!idInput || !urlInput) return;
+
+  const favoriteId = idInput.value.trim();
+  const isEditing = favoriteId.length > 0;
+
+  try {
+    if (isEditing) {
+      await updateFavorite(favoriteId, urlInput.value);
+    } else {
+      await addFavorite(urlInput.value);
+    }
+
+    closeFavoriteModal();
+    await renderFavoritesSection();
+    showToast(isEditing ? 'Site updated' : 'Site added');
+  } catch (err) {
+    setFavoriteError(err && err.message ? err.message : 'Could not save site');
+  }
+});
+
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  const modal = document.getElementById('favoriteModal');
+  if (modal && modal.style.display !== 'none') closeFavoriteModal();
+});
+
+document.addEventListener('click', (e) => {
+  if (e.target && e.target.id === 'favoriteModal') closeFavoriteModal();
+});
+
+document.addEventListener('dragstart', (e) => {
+  const item = e.target.closest('.favorite-item');
+  if (!item) return;
+
+  favoriteDragId = item.dataset.favoriteId || null;
+  item.classList.add('dragging');
+  if (e.dataTransfer) {
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', favoriteDragId || '');
+  }
+});
+
+document.addEventListener('dragover', (e) => {
+  const item = e.target.closest('.favorite-item');
+  if (!item || !favoriteDragId || item.dataset.favoriteId === favoriteDragId) return;
+
+  e.preventDefault();
+  if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+  document.querySelectorAll('.favorite-item.drag-over').forEach(el => {
+    if (el !== item) el.classList.remove('drag-over');
+  });
+  item.classList.add('drag-over');
+});
+
+document.addEventListener('dragleave', (e) => {
+  const item = e.target.closest('.favorite-item');
+  if (!item) return;
+  const related = e.relatedTarget && e.relatedTarget.closest ? e.relatedTarget.closest('.favorite-item') : null;
+  if (related !== item) item.classList.remove('drag-over');
+});
+
+document.addEventListener('dragend', () => {
+  favoriteDragId = null;
+  document.querySelectorAll('.favorite-item').forEach(item => {
+    item.classList.remove('dragging', 'drag-over');
+  });
+});
+
+document.addEventListener('drop', async (e) => {
+  const item = e.target.closest('.favorite-item');
+  if (!item || !favoriteDragId) return;
+
+  e.preventDefault();
+  const targetId = item.dataset.favoriteId;
+  const moved = await moveFavorite(favoriteDragId, targetId);
+  favoriteDragId = null;
+  document.querySelectorAll('.favorite-item').forEach(el => el.classList.remove('dragging', 'drag-over'));
+
+  if (!moved) return;
+  await renderFavoritesSection();
+  showToast('Order updated');
 });
 
 
