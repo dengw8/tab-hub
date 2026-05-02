@@ -5,6 +5,7 @@ node_modules/
 .superpowers/
 dist/
 docs/
+store-assets/
 
 # Personal config (landing page patterns, etc.) — never push to GitHub
 extension/config.local.js

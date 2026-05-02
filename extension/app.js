@@ -2022,13 +2022,14 @@ function renderSiteFavicon(url, className, label = '', options = {}) {
   const providedFaviconUrl = getSafeInlineFaviconUrl(options.favIconUrl);
   const faviconUrl = providedFaviconUrl || getBrowserFaviconUrl(url, size);
   const fallbackText = getFaviconFallbackText(url, label);
-  const fallbackClass = `${className} favicon-fallback`;
+  const safeClassName = escapeHtml(className);
+  const safeFallbackText = escapeHtml(fallbackText);
 
-  if (!faviconUrl) {
-    return `<span class="${fallbackClass}" aria-hidden="true">${escapeHtml(fallbackText)}</span>`;
-  }
+  const imgHtml = faviconUrl
+    ? `<img class="site-favicon-img" src="${escapeHtml(faviconUrl)}" alt="" draggable="false" loading="lazy" decoding="async">`
+    : '';
 
-  return `<img class="${className} site-favicon-img" src="${escapeHtml(faviconUrl)}" alt="" draggable="false" loading="lazy" decoding="async" data-fallback-class="${escapeHtml(fallbackClass)}" data-fallback-text="${escapeHtml(fallbackText)}">`;
+  return `<span class="${safeClassName} site-favicon-shell" aria-hidden="true"><span class="site-favicon-letter">${safeFallbackText}</span>${imgHtml}</span>`;
 }
 
 
@@ -3173,12 +3174,7 @@ document.addEventListener('click', (e) => {
 document.addEventListener('error', (e) => {
   const img = e.target;
   if (!(img instanceof HTMLImageElement) || !img.classList.contains('site-favicon-img')) return;
-
-  const fallback = document.createElement('span');
-  fallback.className = img.dataset.fallbackClass || 'favicon-fallback';
-  fallback.textContent = img.dataset.fallbackText || '?';
-  fallback.setAttribute('aria-hidden', 'true');
-  img.replaceWith(fallback);
+  img.remove();
 }, true);
 
 chrome.storage.onChanged.addListener((changes, areaName) => {
