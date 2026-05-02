@@ -106,6 +106,7 @@ Once the extension is loaded:
 - Dashboard is always the new tab page.
 - Tab Tree is optional and enabled by default.
 - Tab Tree structure is intentionally shallow: root -> folders -> tabs.
+- Website icons use the Manifest V3 `_favicon` URL with the `favicon` permission; do not reintroduce third-party favicon aggregators.
 - Data is stored in `chrome.storage.local` under the versioned `tabOutStore` envelope.
 - The store includes `features`, `settings`, `data.dashboard`, `data.tabTree`, and `meta`.
 - Chrome, Edge, and Edge Beta do not automatically share extension local storage; use export/import for browser-to-browser transfer.

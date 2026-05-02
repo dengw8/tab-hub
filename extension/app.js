@@ -72,6 +72,7 @@ async function fetchOpenTabs() {
       title:    t.title,
       windowId: t.windowId,
       active:   t.active,
+      favIconUrl: t.favIconUrl || '',
       // Flag Tab Hub's own pages so we can detect duplicate new tabs
       isTabOut: t.url === newtabUrl || t.url === 'chrome://newtab/',
     }));
@@ -373,7 +374,7 @@ function getDashboardData(store) {
  * saveTabForLater(tab)
  *
  * Saves a single tab to the "Saved for Later" list in chrome.storage.local.
- * @param {{ url: string, title: string }} tab
+ * @param {{ url: string, title: string, favIconUrl?: string }} tab
  */
 async function saveTabForLater(tab) {
   await updateTabOutStore(store => {
@@ -382,6 +383,7 @@ async function saveTabForLater(tab) {
       id:        Date.now().toString(),
       url:       tab.url,
       title:     tab.title,
+      favIconUrl: tab.favIconUrl || '',
       savedAt:   nowIso(),
       completed: false,
       dismissed: false,
@@ -459,6 +461,7 @@ async function getFavorites() {
     .map(item => ({
       id: item.id || createFavoriteId(),
       url: item.url,
+      favIconUrl: item.favIconUrl || '',
       createdAt: item.createdAt || new Date().toISOString(),
     }));
 }
@@ -520,6 +523,7 @@ async function updateFavorite(id, urlInput) {
   if (favorites.some(item => item.id !== id && item.url === url)) throw new Error('Site already exists');
 
   favorite.url = url;
+  favorite.favIconUrl = '';
   await saveFavorites(favorites);
 }
 
@@ -1975,13 +1979,56 @@ function getFavoriteDisplayUrl(url) {
   }
 }
 
-function getFavoriteFaviconUrl(url) {
+function getBrowserFaviconUrl(url, size = 16) {
   try {
-    const hostname = new URL(url).hostname;
-    return `https://www.google.com/s2/favicons?domain=${hostname}&sz=16`;
+    const parsed = new URL(url);
+    if (!['http:', 'https:'].includes(parsed.protocol)) return '';
+    const faviconUrl = new URL(chrome.runtime.getURL('/_favicon/'));
+    faviconUrl.searchParams.set('pageUrl', parsed.toString());
+    faviconUrl.searchParams.set('size', String(size));
+    return faviconUrl.toString();
   } catch {
     return '';
   }
+}
+
+function getSafeInlineFaviconUrl(url) {
+  if (!url) return '';
+  try {
+    const parsed = new URL(url);
+    return ['data:', 'chrome-extension:'].includes(parsed.protocol) ? parsed.toString() : '';
+  } catch {
+    return '';
+  }
+}
+
+function getFavoriteFaviconUrl(url) {
+  return getBrowserFaviconUrl(url, 16);
+}
+
+function getFaviconFallbackText(url, label = '') {
+  try {
+    const host = new URL(url).hostname.replace(/^www\./, '');
+    const friendly = friendlyDomain(host) || host;
+    if (friendly) return friendly.charAt(0).toUpperCase();
+  } catch {}
+
+  const trimmed = String(label || '').trim();
+  return trimmed ? trimmed.charAt(0).toUpperCase() : '?';
+}
+
+function renderSiteFavicon(url, className, label = '', options = {}) {
+  const size = options.size || 16;
+  const providedFaviconUrl = getSafeInlineFaviconUrl(options.favIconUrl);
+  const faviconUrl = providedFaviconUrl || getBrowserFaviconUrl(url, size);
+  const fallbackText = getFaviconFallbackText(url, label);
+  const fallbackClass = `${className} favicon-fallback`;
+
+  if (!faviconUrl) {
+    return `<span class="${fallbackClass}" aria-hidden="true">${escapeHtml(fallbackText)}</span>`;
+  }
+
+  return `<img class="${className} site-favicon-img" src="${escapeHtml(faviconUrl)}" alt="" draggable="false" loading="lazy" decoding="async" data-fallback-class="${escapeHtml(fallbackClass)}" data-fallback-text="${escapeHtml(fallbackText)}">`;
 }
 
 
@@ -2060,17 +2107,18 @@ function renderPageChip(tab, hostname, urlCounts = {}) {
   const count = urlCounts[tab.url] || 1;
   const dupeTag = count > 1 ? ` <span class="chip-dupe-badge">(${count}x)</span>` : '';
   const chipClass = count > 1 ? ' chip-has-dupes' : '';
-  const safeUrl = (tab.url || '').replace(/"/g, '&quot;');
-  const safeTitle = label.replace(/"/g, '&quot;');
-  let domain = '';
-  try { domain = new URL(tab.url).hostname; } catch {}
-  const faviconUrl = domain ? `https://www.google.com/s2/favicons?domain=${domain}&sz=16` : '';
-
+  const safeUrl = escapeHtml(tab.url || '');
+  const safeTitle = escapeHtml(label);
+  const faviconHtml = renderSiteFavicon(tab.url, 'chip-favicon', label, {
+    size: 16,
+    favIconUrl: tab.favIconUrl || '',
+  });
+  const safeFaviconUrl = escapeHtml(tab.favIconUrl || '');
   return `<div class="page-chip clickable${chipClass}" data-action="focus-tab" data-tab-url="${safeUrl}" title="${safeTitle}">
-      ${faviconUrl ? `<img class="chip-favicon" src="${faviconUrl}" alt="" loading="lazy" decoding="async" onerror="this.style.display='none'">` : ''}
-      <span class="chip-text">${label}</span>${dupeTag}
+      ${faviconHtml}
+      <span class="chip-text">${safeTitle}</span>${dupeTag}
       <div class="chip-actions">
-        <button class="chip-action chip-save" data-action="defer-single-tab" data-tab-url="${safeUrl}" data-tab-title="${safeTitle}" title="Save for later">
+        <button class="chip-action chip-save" data-action="defer-single-tab" data-tab-url="${safeUrl}" data-tab-title="${safeTitle}" data-tab-favicon-url="${safeFaviconUrl}" title="Save for later">
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0 1 11.186 0Z" /></svg>
         </button>
         <button class="chip-action chip-close" data-action="close-single-tab" data-tab-url="${safeUrl}" title="Close this tab">
@@ -2083,7 +2131,7 @@ function renderPageChip(tab, hostname, urlCounts = {}) {
 function buildOverflowChips(hiddenTabs, hostname, urlCounts = {}) {
   const overflowId = 'overflow-' + (++overflowChipSeq);
   overflowChipCache.set(overflowId, {
-    hiddenTabs: hiddenTabs.map(tab => ({ url: tab.url, title: tab.title })),
+    hiddenTabs: hiddenTabs.map(tab => ({ url: tab.url, title: tab.title, favIconUrl: tab.favIconUrl || '' })),
     hostname,
     urlCounts,
   });
@@ -2184,14 +2232,17 @@ function renderDomainCard(group) {
 function renderFavoriteItem(item) {
   const displayName = getFavoriteDisplayName(item.url);
   const displayUrl = getFavoriteDisplayUrl(item.url);
-  const faviconUrl = getFavoriteFaviconUrl(item.url);
+  const faviconHtml = renderSiteFavicon(item.url, 'favorite-favicon', displayName, {
+    size: 18,
+    favIconUrl: item.favIconUrl || getFavoriteFaviconUrl(item.url),
+  });
   const safeId = escapeHtml(item.id);
   const safeUrl = escapeHtml(item.url);
 
   return `
     <div class="favorite-item" data-favorite-id="${safeId}" draggable="true">
       <a class="favorite-main" href="${safeUrl}" title="${safeUrl}">
-        ${faviconUrl ? `<img class="favorite-favicon" src="${faviconUrl}" alt="" draggable="false" loading="lazy" decoding="async" onerror="this.style.display='none'">` : ''}
+        ${faviconHtml}
         <div class="favorite-text">
           <div class="favorite-name">${escapeHtml(displayName)}</div>
           <div class="favorite-url">${escapeHtml(displayUrl)}</div>
@@ -2344,22 +2395,30 @@ async function renderDeferredColumn() {
 function renderDeferredItem(item) {
   let domain = '';
   try { domain = new URL(item.url).hostname.replace(/^www\./, ''); } catch {}
-  const faviconUrl = `https://www.google.com/s2/favicons?domain=${domain}&sz=16`;
   const ago = timeAgo(item.savedAt);
+  const title = item.title || item.url;
+  const safeId = escapeHtml(item.id);
+  const safeUrl = escapeHtml(item.url);
+  const safeTitle = escapeHtml(title);
+  const faviconHtml = renderSiteFavicon(item.url, 'deferred-favicon', title, {
+    size: 16,
+    favIconUrl: item.favIconUrl || '',
+  });
 
   return `
-    <div class="deferred-item" data-deferred-id="${item.id}">
-      <input type="checkbox" class="deferred-checkbox" data-action="check-deferred" data-deferred-id="${item.id}">
+    <div class="deferred-item" data-deferred-id="${safeId}">
+      <input type="checkbox" class="deferred-checkbox" data-action="check-deferred" data-deferred-id="${safeId}">
       <div class="deferred-info">
-        <a href="${item.url}" target="_blank" rel="noopener" class="deferred-title" title="${(item.title || '').replace(/"/g, '&quot;')}">
-          <img src="${faviconUrl}" alt="" loading="lazy" decoding="async" style="width:14px;height:14px;vertical-align:-2px;margin-right:4px" onerror="this.style.display='none'">${item.title || item.url}
+        <a href="${safeUrl}" target="_blank" rel="noopener" class="deferred-title" title="${safeTitle}">
+          ${faviconHtml}
+          <span class="deferred-title-text">${safeTitle}</span>
         </a>
         <div class="deferred-meta">
-          <span>${domain}</span>
+          <span>${escapeHtml(domain)}</span>
           <span>${ago}</span>
         </div>
       </div>
-      <button class="deferred-dismiss" data-action="dismiss-deferred" data-deferred-id="${item.id}" title="Dismiss">
+      <button class="deferred-dismiss" data-action="dismiss-deferred" data-deferred-id="${safeId}" title="Dismiss">
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
       </button>
     </div>`;
@@ -2836,11 +2895,12 @@ document.addEventListener('click', async (e) => {
     e.stopPropagation();
     const tabUrl   = actionEl.dataset.tabUrl;
     const tabTitle = actionEl.dataset.tabTitle || tabUrl;
+    const tabFaviconUrl = actionEl.dataset.tabFaviconUrl || '';
     if (!tabUrl) return;
 
     // Save to chrome.storage.local
     try {
-      await saveTabForLater({ url: tabUrl, title: tabTitle });
+      await saveTabForLater({ url: tabUrl, title: tabTitle, favIconUrl: tabFaviconUrl });
     } catch (err) {
       console.error('[tab-out] Failed to save tab:', err);
       showToast('Failed to save tab');
@@ -3109,6 +3169,17 @@ document.addEventListener('click', (e) => {
   if (e.target && e.target.id === 'settingsModal') e.target.style.display = 'none';
   if (e.target && e.target.id === 'treeTabModal') closeTreeTabModal();
 });
+
+document.addEventListener('error', (e) => {
+  const img = e.target;
+  if (!(img instanceof HTMLImageElement) || !img.classList.contains('site-favicon-img')) return;
+
+  const fallback = document.createElement('span');
+  fallback.className = img.dataset.fallbackClass || 'favicon-fallback';
+  fallback.textContent = img.dataset.fallbackText || '?';
+  fallback.setAttribute('aria-hidden', 'true');
+  img.replaceWith(fallback);
+}, true);
 
 chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName !== 'local' || !changes[TAB_OUT_STORE_KEY]) return;

@@ -145,6 +145,7 @@ Legacy `favorites` and `deferred` keys are migrated into `data.dashboard` when t
 | Storage | `chrome.storage.local` |
 | Context menu | `chrome.contextMenus` |
 | Page injection | `chrome.scripting` for inline Tab Tree folder creation |
+| Favicons | Manifest V3 `_favicon` URL with the `favicon` permission |
 | Sound | Web Audio API |
 | UI | Plain HTML, CSS, and JavaScript |
 

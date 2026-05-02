@@ -2,8 +2,9 @@ node_modules/
 *.log
 *.db
 .DS_Store
-docs/superpowers/
 .superpowers/
+dist/
+docs/
 
 # Personal config (landing page patterns, etc.) — never push to GitHub
 extension/config.local.js
