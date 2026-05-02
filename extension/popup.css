@@ -1,4 +1,5 @@
 :root {
+  color-scheme: light;
   --ink: #1a1613;
   --paper: #f8f5f0;
   --warm-gray: #e8e2da;
@@ -7,6 +8,40 @@
   --status-active: #3d7a4a;
   --card-bg: #fffdf9;
   --shadow: rgba(26, 22, 19, 0.09);
+  --texture-opacity: 1;
+  --surface-card: rgba(255, 253, 249, 0.86);
+  --surface-muted: rgba(255, 253, 249, 0.52);
+  --input-bg: #fff;
+  --switch-thumb: #fffdf9;
+  --hover-border: rgba(26, 22, 19, 0.32);
+  --soft-hover: rgba(154, 145, 138, 0.12);
+  --success-soft: rgba(61, 122, 74, 0.08);
+  --success-border: rgba(61, 122, 74, 0.22);
+  --danger: #8e3f3f;
+  --error: #b35a5a;
+}
+
+:root[data-resolved-theme="dark"] {
+  color-scheme: dark;
+  --ink: #f4eee6;
+  --paper: #12110f;
+  --warm-gray: #342f2a;
+  --muted: #a79b8f;
+  --accent-amber: #d58a52;
+  --status-active: #7fa184;
+  --card-bg: #1b1815;
+  --shadow: rgba(0, 0, 0, 0.36);
+  --texture-opacity: 0.68;
+  --surface-card: rgba(27, 24, 21, 0.88);
+  --surface-muted: rgba(27, 24, 21, 0.58);
+  --input-bg: #151310;
+  --switch-thumb: #f4eee6;
+  --hover-border: rgba(244, 238, 230, 0.24);
+  --soft-hover: rgba(167, 155, 143, 0.12);
+  --success-soft: rgba(127, 161, 132, 0.12);
+  --success-border: rgba(127, 161, 132, 0.26);
+  --danger: #cf7470;
+  --error: #cf7470;
 }
 
 * {
@@ -15,7 +50,7 @@
 
 body {
   width: 320px;
-  min-height: 360px;
+  min-height: 470px;
   margin: 0;
   background: var(--paper);
   color: var(--ink);
@@ -33,6 +68,7 @@ body {
   position: fixed;
   inset: 0;
   pointer-events: none;
+  opacity: var(--texture-opacity);
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
 }
 
@@ -84,7 +120,7 @@ h1 {
   margin-bottom: 10px;
   border: 1px solid rgba(232, 226, 218, 0.95);
   border-radius: 8px;
-  background: rgba(255, 253, 249, 0.86);
+  background: var(--surface-card);
   box-shadow: 0 8px 24px var(--shadow);
   padding: 13px;
 }
@@ -98,7 +134,7 @@ h1 {
 
 .feature-card.muted {
   box-shadow: none;
-  background: rgba(255, 253, 249, 0.52);
+  background: var(--surface-muted);
 }
 
 .feature-row {
@@ -161,7 +197,7 @@ h1 {
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  background: var(--card-bg);
+  background: var(--switch-thumb);
   box-shadow: 0 2px 7px rgba(26, 22, 19, 0.18);
 }
 
@@ -205,9 +241,88 @@ body.popup-ready .switch span::after {
   opacity: 0.42;
 }
 
+.segmented-control {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 3px;
+  margin-top: 12px;
+  padding: 3px;
+  border: 1px solid var(--warm-gray);
+  border-radius: 8px;
+  background: var(--input-bg);
+}
+
+.segment {
+  min-height: 30px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 6px 7px;
+}
+
+.segment:hover {
+  background: var(--soft-hover);
+  color: var(--ink);
+}
+
+.segment.active {
+  background: var(--ink);
+  color: var(--card-bg);
+}
+
+.transfer-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.transfer-actions .secondary-action:first-child {
+  grid-column: 1 / -1;
+}
+
+.secondary-action {
+  min-height: 34px;
+  border: 1px solid var(--warm-gray);
+  border-radius: 7px;
+  background: var(--card-bg);
+  color: var(--ink);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 7px 10px;
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+
+.secondary-action:hover {
+  border-color: var(--hover-border);
+  transform: translateY(-1px);
+}
+
+.secondary-action.danger {
+  color: var(--danger);
+}
+
+.popup-message {
+  margin-top: 12px;
+  border: 1px solid var(--success-border);
+  border-radius: 7px;
+  background: var(--success-soft);
+  color: var(--status-active);
+  font-size: 12px;
+  line-height: 1.35;
+  padding: 9px 10px;
+}
+
 .popup-error {
   margin-top: 12px;
-  color: #b35a5a;
+  color: var(--error);
   font-size: 12px;
   line-height: 1.35;
 }

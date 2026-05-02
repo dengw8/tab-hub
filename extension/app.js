@@ -35,6 +35,23 @@ let tabTreeSearchQuery = '';
 const overflowChipCache = new Map();
 const TAB_OUT_STORE_KEY = 'tabOutStore';
 const TAB_OUT_STORE_VERSION = 1;
+const THEME_OPTIONS = ['system', 'light', 'dark'];
+
+function normalizeThemePreference(theme) {
+  return THEME_OPTIONS.includes(theme) ? theme : 'system';
+}
+
+function resolveThemePreference(theme) {
+  const normalized = normalizeThemePreference(theme);
+  if (normalized !== 'system') return normalized;
+  return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+}
+
+function applyThemePreference(theme) {
+  const normalized = normalizeThemePreference(theme);
+  document.documentElement.dataset.theme = normalized;
+  document.documentElement.dataset.resolvedTheme = resolveThemePreference(normalized);
+}
 
 /**
  * fetchOpenTabs()
@@ -260,6 +277,9 @@ function createDefaultStore(legacy = {}) {
     features: {
       tabTree: { enabled: true },
     },
+    settings: {
+      theme: 'system',
+    },
     data: {
       dashboard: {
         favorites: Array.isArray(legacy.favorites) ? legacy.favorites : [],
@@ -285,6 +305,10 @@ function normalizeStore(raw, legacy = {}) {
       ...fallback.features,
       ...(raw.features && typeof raw.features === 'object' ? raw.features : {}),
     },
+    settings: {
+      ...fallback.settings,
+      ...(raw.settings && typeof raw.settings === 'object' ? raw.settings : {}),
+    },
     data: {
       ...fallback.data,
       ...(raw.data && typeof raw.data === 'object' ? raw.data : {}),
@@ -301,6 +325,7 @@ function normalizeStore(raw, legacy = {}) {
   if (typeof store.features.tabTree.enabled !== 'boolean') {
     store.features.tabTree.enabled = true;
   }
+  store.settings.theme = normalizeThemePreference(store.settings.theme);
 
   const dashboard = store.data.dashboard && typeof store.data.dashboard === 'object' ? store.data.dashboard : {};
   store.data.dashboard = {
@@ -687,6 +712,23 @@ async function setTabTreeEnabled(enabled) {
   await updateTabOutStore(store => {
     store.features.tabTree = { ...(store.features.tabTree || {}), enabled: !!enabled };
   });
+}
+
+async function getThemePreference() {
+  const store = await getTabOutStore();
+  return normalizeThemePreference(store.settings && store.settings.theme);
+}
+
+async function setThemePreference(theme) {
+  let nextTheme = 'system';
+  await updateTabOutStore(store => {
+    store.settings = {
+      ...(store.settings || {}),
+      theme: normalizeThemePreference(theme),
+    };
+    nextTheme = store.settings.theme;
+  });
+  applyThemePreference(nextTheme);
 }
 
 function findTreeParent(tree, nodeId) {
@@ -1298,12 +1340,20 @@ async function showTabTreeView(options = {}) {
 }
 
 async function initializeApp() {
+  const store = await getTabOutStore();
+  applyThemePreference(store.settings && store.settings.theme);
   renderDashboardChrome();
   if (location.hash === '#tab-tree' && await isTabTreeEnabled()) {
     await showTabTreeView({ updateHash: false });
     return;
   }
   await showDashboardView({ updateHash: false });
+}
+
+if (window.matchMedia) {
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', async () => {
+    if (await getThemePreference() === 'system') applyThemePreference('system');
+  });
 }
 
 function setTreeTabError(message) {
@@ -2545,7 +2595,9 @@ document.addEventListener('click', async (e) => {
   if (action === 'open-settings-modal') {
     const modal = document.getElementById('settingsModal');
     const input = document.getElementById('tabTreeEnabledInput');
+    const themeSelect = document.getElementById('themePreferenceInput');
     if (input) input.checked = await isTabTreeEnabled();
+    if (themeSelect) themeSelect.value = await getThemePreference();
     if (modal) modal.style.display = 'flex';
     return;
   }
@@ -2558,7 +2610,9 @@ document.addEventListener('click', async (e) => {
 
   if (action === 'save-settings') {
     const input = document.getElementById('tabTreeEnabledInput');
+    const themeSelect = document.getElementById('themePreferenceInput');
     await setTabTreeEnabled(!!(input && input.checked));
+    await setThemePreference(themeSelect ? themeSelect.value : 'system');
     const modal = document.getElementById('settingsModal');
     if (modal) modal.style.display = 'none';
     await renderAppShell();
@@ -3054,6 +3108,12 @@ document.addEventListener('click', (e) => {
   if (e.target && e.target.id === 'favoriteModal') closeFavoriteModal();
   if (e.target && e.target.id === 'settingsModal') e.target.style.display = 'none';
   if (e.target && e.target.id === 'treeTabModal') closeTreeTabModal();
+});
+
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName !== 'local' || !changes[TAB_OUT_STORE_KEY]) return;
+  const store = normalizeStore(changes[TAB_OUT_STORE_KEY].newValue);
+  applyThemePreference(store.settings && store.settings.theme);
 });
 
 document.addEventListener('dragstart', (e) => {

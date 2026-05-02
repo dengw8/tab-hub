@@ -24,6 +24,7 @@ const TAB_TREE_FOLDER_MENU_PREFIX = 'tab-out-add-current-page-folder:';
 const TAB_TREE_PENDING_ADD_KEY = 'tabTreePendingAdd';
 const TAB_TREE_ALLOWED_PROTOCOLS = ['http:', 'https:', 'chrome:', 'chrome-extension:', 'about:', 'file:'];
 const TAB_TREE_CREATE_FOLDER_MESSAGE = 'tab-out:create-folder-and-add-current-page';
+const THEME_OPTIONS = ['system', 'light', 'dark'];
 
 // ─── Badge updater ────────────────────────────────────────────────────────────
 
@@ -78,6 +79,10 @@ function nowIso() {
   return new Date().toISOString();
 }
 
+function normalizeThemePreference(theme) {
+  return THEME_OPTIONS.includes(theme) ? theme : 'system';
+}
+
 function createTreeNodeId() {
   if (globalThis.crypto && typeof globalThis.crypto.randomUUID === 'function') {
     return 'node_' + globalThis.crypto.randomUUID();
@@ -118,6 +123,9 @@ function createDefaultStore() {
     appVersion: chrome.runtime && chrome.runtime.getManifest ? chrome.runtime.getManifest().version : '1.0.0',
     features: {
       tabTree: { enabled: true },
+    },
+    settings: {
+      theme: 'system',
     },
     data: {
       dashboard: {
@@ -268,6 +276,10 @@ function normalizeStore(raw) {
       ...fallback.features,
       ...(raw.features && typeof raw.features === 'object' ? raw.features : {}),
     },
+    settings: {
+      ...fallback.settings,
+      ...(raw.settings && typeof raw.settings === 'object' ? raw.settings : {}),
+    },
     data: {
       ...fallback.data,
       ...(raw.data && typeof raw.data === 'object' ? raw.data : {}),
@@ -284,6 +296,7 @@ function normalizeStore(raw) {
   if (typeof store.features.tabTree.enabled !== 'boolean') {
     store.features.tabTree.enabled = true;
   }
+  store.settings.theme = normalizeThemePreference(store.settings.theme);
 
   const dashboard = store.data.dashboard && typeof store.data.dashboard === 'object' ? store.data.dashboard : {};
   store.data.dashboard = {
@@ -631,9 +644,38 @@ async function createFolderAndAddCurrentTab(tab, folderName) {
   return { folderId, tabId };
 }
 
-function showTabTreeFolderModalInPage(pageTitle) {
+function showTabTreeFolderModalInPage(pageTitle, themePreference) {
   const existing = document.getElementById('tab-out-tree-folder-modal-host');
   if (existing) existing.remove();
+  const darkQuery = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const resolvedTheme = themePreference === 'dark' || (themePreference === 'system' && darkQuery) ? 'dark' : 'light';
+  const theme = resolvedTheme === 'dark'
+    ? {
+        overlay: 'rgba(0, 0, 0, 0.56)',
+        border: 'rgba(82, 73, 64, 0.95)',
+        card: '#1b1815',
+        input: '#151310',
+        ink: '#f4eee6',
+        muted: '#a79b8f',
+        line: '#342f2a',
+        accent: '#d58a52',
+        shadow: 'rgba(0, 0, 0, 0.44)',
+        soft: 'rgba(167, 155, 143, 0.12)',
+        danger: '#cf7470',
+      }
+    : {
+        overlay: 'rgba(26, 22, 19, 0.34)',
+        border: 'rgba(154, 145, 138, 0.32)',
+        card: '#fffdf9',
+        input: '#fff',
+        ink: '#1a1613',
+        muted: '#9a918a',
+        line: '#e8e2da',
+        accent: '#c8713a',
+        shadow: 'rgba(26, 22, 19, 0.22)',
+        soft: 'rgba(154, 145, 138, 0.12)',
+        danger: '#b35a5a',
+      };
 
   const host = document.createElement('div');
   host.id = 'tab-out-tree-folder-modal-host';
@@ -655,15 +697,15 @@ function showTabTreeFolderModalInPage(pageTitle) {
       inset: 0;
       display: grid;
       place-items: center;
-      background: rgba(26, 22, 19, 0.34);
+      background: ${theme.overlay};
     }
     .card {
       width: min(420px, calc(100vw - 36px));
-      border: 1px solid rgba(154, 145, 138, 0.32);
+      border: 1px solid ${theme.border};
       border-radius: 12px;
-      background: #fffdf9;
-      box-shadow: 0 22px 70px rgba(26, 22, 19, 0.22);
-      color: #1a1613;
+      background: ${theme.card};
+      box-shadow: 0 22px 70px ${theme.shadow};
+      color: ${theme.ink};
       padding: 20px;
     }
     .header {
@@ -675,7 +717,7 @@ function showTabTreeFolderModalInPage(pageTitle) {
     }
     .kicker {
       margin-bottom: 4px;
-      color: #9a918a;
+      color: ${theme.muted};
       font-size: 11px;
       font-weight: 700;
       letter-spacing: 0.12em;
@@ -695,28 +737,28 @@ function showTabTreeFolderModalInPage(pageTitle) {
       border: 0;
       border-radius: 7px;
       background: transparent;
-      color: #9a918a;
+      color: ${theme.muted};
       cursor: pointer;
       font: inherit;
       font-size: 22px;
       line-height: 1;
     }
     .close:hover {
-      background: rgba(154, 145, 138, 0.12);
-      color: #1a1613;
+      background: ${theme.soft};
+      color: ${theme.ink};
     }
     .page {
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
-      color: #9a918a;
+      color: ${theme.muted};
       font-size: 12px;
       margin-bottom: 14px;
     }
     label {
       display: block;
       margin-bottom: 6px;
-      color: #9a918a;
+      color: ${theme.muted};
       font-size: 11px;
       font-weight: 700;
       letter-spacing: 0.08em;
@@ -725,23 +767,23 @@ function showTabTreeFolderModalInPage(pageTitle) {
     input {
       width: 100%;
       box-sizing: border-box;
-      border: 1px solid #e8e2da;
+      border: 1px solid ${theme.line};
       border-radius: 8px;
-      background: #fff;
-      color: #1a1613;
+      background: ${theme.input};
+      color: ${theme.ink};
       font: inherit;
       font-size: 14px;
       padding: 11px 12px;
       outline: none;
     }
     input:focus {
-      border-color: #c8713a;
-      box-shadow: 0 0 0 3px rgba(200, 113, 58, 0.09);
+      border-color: ${theme.accent};
+      box-shadow: 0 0 0 3px color-mix(in srgb, ${theme.accent} 16%, transparent);
     }
     .error {
       display: none;
       margin-top: 9px;
-      color: #b35a5a;
+      color: ${theme.danger};
       font-size: 12px;
     }
     .actions {
@@ -752,19 +794,19 @@ function showTabTreeFolderModalInPage(pageTitle) {
     }
     .btn {
       min-height: 36px;
-      border: 1px solid #e8e2da;
+      border: 1px solid ${theme.line};
       border-radius: 7px;
-      background: #fffdf9;
-      color: #1a1613;
+      background: ${theme.card};
+      color: ${theme.ink};
       cursor: pointer;
       font: inherit;
       font-size: 13px;
       padding: 8px 14px;
     }
     .btn.primary {
-      border-color: #1a1613;
-      background: #1a1613;
-      color: #fffdf9;
+      border-color: ${theme.ink};
+      background: ${theme.ink};
+      color: ${theme.card};
       font-weight: 700;
     }
     .btn:disabled {
@@ -870,10 +912,11 @@ async function openInlineNewFolderModal(tab) {
     return false;
   }
   try {
+    const store = await getTabOutStore();
     await chrome.scripting.executeScript({
       target: { tabId: tab.id },
       func: showTabTreeFolderModalInPage,
-      args: [getTabDisplayTitle(tab)],
+      args: [getTabDisplayTitle(tab), store.settings && store.settings.theme],
     });
     return true;
   } catch (err) {

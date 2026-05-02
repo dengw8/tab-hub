@@ -44,11 +44,33 @@
       <button class="primary-action" type="button" id="openTabTreeButton">Open Tab Tree</button>
     </section>
 
+    <section class="feature-card">
+      <div class="feature-title">Appearance</div>
+      <div class="feature-subtitle">Match the system or choose a fixed theme.</div>
+      <div class="segmented-control" aria-label="Theme">
+        <button class="segment active" type="button" data-theme-choice="system">System</button>
+        <button class="segment" type="button" data-theme-choice="light">Light</button>
+        <button class="segment" type="button" data-theme-choice="dark">Dark</button>
+      </div>
+    </section>
+
+    <section class="feature-card">
+      <div class="feature-title">Data transfer</div>
+      <div class="feature-subtitle">Move Tab Hub data between browsers with a JSON backup.</div>
+      <div class="transfer-actions">
+        <button class="secondary-action" type="button" id="exportDataButton">Export data</button>
+        <button class="secondary-action" type="button" data-import-mode="merge">Import merge</button>
+        <button class="secondary-action danger" type="button" data-import-mode="replace">Replace data</button>
+      </div>
+      <input type="file" id="importFileInput" accept="application/json,.json" hidden>
+    </section>
+
     <section class="feature-card muted">
       <div class="feature-title">More features</div>
       <div class="feature-subtitle">Future controls will live here.</div>
     </section>
 
+    <div class="popup-message" id="popupMessage" style="display:none"></div>
     <div class="popup-error" id="popupError" style="display:none"></div>
   </main>
 

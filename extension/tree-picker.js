@@ -4,6 +4,7 @@ const TAB_OUT_STORE_KEY = 'tabOutStore';
 const TAB_OUT_STORE_VERSION = 1;
 const TAB_TREE_PENDING_ADD_KEY = 'tabTreePendingAdd';
 const TAB_TREE_ALLOWED_PROTOCOLS = ['http:', 'https:', 'chrome:', 'chrome-extension:', 'about:', 'file:'];
+const THEME_OPTIONS = ['system', 'light', 'dark'];
 
 let pendingPage = null;
 let currentStore = null;
@@ -15,6 +16,22 @@ function getPickerMode() {
 
 function nowIso() {
   return new Date().toISOString();
+}
+
+function normalizeThemePreference(theme) {
+  return THEME_OPTIONS.includes(theme) ? theme : 'system';
+}
+
+function resolveThemePreference(theme) {
+  const normalized = normalizeThemePreference(theme);
+  if (normalized !== 'system') return normalized;
+  return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+}
+
+function applyThemePreference(theme) {
+  const normalized = normalizeThemePreference(theme);
+  document.documentElement.dataset.theme = normalized;
+  document.documentElement.dataset.resolvedTheme = resolveThemePreference(normalized);
 }
 
 function createTreeNodeId() {
@@ -57,6 +74,9 @@ function createDefaultStore() {
     appVersion: chrome.runtime && chrome.runtime.getManifest ? chrome.runtime.getManifest().version : '1.0.0',
     features: {
       tabTree: { enabled: true },
+    },
+    settings: {
+      theme: 'system',
     },
     data: {
       dashboard: {
@@ -207,6 +227,10 @@ function normalizeStore(raw) {
       ...fallback.features,
       ...(raw.features && typeof raw.features === 'object' ? raw.features : {}),
     },
+    settings: {
+      ...fallback.settings,
+      ...(raw.settings && typeof raw.settings === 'object' ? raw.settings : {}),
+    },
     data: {
       ...fallback.data,
       ...(raw.data && typeof raw.data === 'object' ? raw.data : {}),
@@ -223,6 +247,7 @@ function normalizeStore(raw) {
   if (typeof store.features.tabTree.enabled !== 'boolean') {
     store.features.tabTree.enabled = true;
   }
+  store.settings.theme = normalizeThemePreference(store.settings.theme);
 
   const dashboard = store.data.dashboard && typeof store.data.dashboard === 'object' ? store.data.dashboard : {};
   store.data.dashboard = {
@@ -563,6 +588,7 @@ async function initializePicker() {
   try {
     await loadPendingPage();
     currentStore = await getStore();
+    applyThemePreference(currentStore.settings && currentStore.settings.theme);
     renderPendingPage();
     renderFolders();
     if (getPickerMode() === 'new-folder') {
@@ -609,5 +635,19 @@ document.getElementById('folderList')?.addEventListener('click', async event => 
   if (!button) return;
   await addPendingToFolder(button.dataset.folderId);
 });
+
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName !== 'local' || !changes[TAB_OUT_STORE_KEY]) return;
+  currentStore = normalizeStore(changes[TAB_OUT_STORE_KEY].newValue);
+  applyThemePreference(currentStore.settings && currentStore.settings.theme);
+  renderFolders();
+});
+
+if (window.matchMedia) {
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+    const theme = currentStore && currentStore.settings ? currentStore.settings.theme : 'system';
+    if (normalizeThemePreference(theme) === 'system') applyThemePreference('system');
+  });
+}
 
 initializePicker();

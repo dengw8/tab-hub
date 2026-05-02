@@ -2,97 +2,164 @@
 
 **Keep tabs on your tabs.**
 
-Tab Hub is a Chrome extension that replaces your new tab page with a dashboard of everything you have open. Tabs are grouped by domain, with homepages (Gmail, X, LinkedIn, etc.) pulled into their own group. You can also pin your own common sites at the top of the page for one-click access. Close tabs with a satisfying swoosh + confetti.
+Tab Hub is a local Chromium extension for Chrome, Edge, and Edge Beta. It replaces the new tab page with a clean dashboard of open tabs grouped by domain, and adds a lightweight Tab Tree for temporary links that are useful right now but too small to become bookmarks.
 
-No server. No account. No external API calls. Just a Chrome extension.
-
----
-
-## Install with a coding agent
-
-Send your coding agent (Claude Code, Codex, etc.) this repo and say **"install this"**:
-
-```
-https://github.com/zarazhangrui/tab-out
-```
-
-The agent will walk you through it. Takes about 1 minute.
+No server. No account. No Tab Hub backend. Your data stays in browser extension storage unless you explicitly export it.
 
 ---
 
 ## Features
 
-- **See all your tabs at a glance** on a clean grid, grouped by domain
-- **Common sites** add your own go-to websites right inside the new tab page
-- **Homepages group** pulls Gmail inbox, X home, YouTube, LinkedIn, GitHub homepages into one card
-- **Close tabs with style** with swoosh sound + confetti burst
-- **Duplicate detection** flags when you have the same page open twice, with one-click cleanup
-- **Click any tab to jump to it** across windows, no new tab opened
-- **Save for later** bookmark tabs to a checklist before closing them
-- **Tab Tree** keep temporary links in lightweight folders without deep bookmark-style nesting
-- **Right-click add to Tab Tree** pick an existing folder directly from the context menu, or create one in a quick page modal
-- **Toolbar controls** toggle Tab Tree or jump straight into it from the extension popup
-- **Localhost grouping** shows port numbers next to each tab so you can tell your vibe coding projects apart
-- **Expandable groups** show the first 8 tabs with a clickable "+N more"
-- **100% local** your data never leaves your machine
-- **Pure Chrome extension** no server, no Node.js, no npm, no setup beyond loading the extension
+- **Dashboard new tab** shows all open tabs grouped by domain
+- **Common sites** pins frequently used websites at the top
+- **Homepages group** collects Gmail, X, LinkedIn, YouTube, GitHub homepages into one cleanup card
+- **Duplicate detection** flags repeated pages with one-click cleanup
+- **Jump to tab** opens the existing tab instead of creating another one
+- **Save for later** keeps tabs in a local checklist before closing them
+- **Tab Tree** stores temporary links in shallow folders
+- **Right-click add to Tab Tree** adds the current page to an existing folder or creates a folder inline
+- **Toolbar popup** controls Tab Tree, theme, import, and export
+- **Import/export** moves data between Chrome, Edge, and Edge Beta using local JSON backups
+- **Light/dark themes** can follow system appearance or stay fixed
+- **Localhost grouping** shows port numbers so local projects are easier to tell apart
+- **100% local-first** no accounts, no remote sync service, no setup beyond loading the extension
 
 ---
 
-## Manual Setup
+## Install
 
 **1. Clone the repo**
 
 ```bash
-git clone https://github.com/zarazhangrui/tab-out.git
+git clone https://github.com/dengw8/tab-hub.git
+cd tab-hub
 ```
 
-**2. Load the Chrome extension**
+**2. Load the extension**
 
-1. Open Chrome and go to `chrome://extensions`
-2. Enable **Developer mode** (top-right toggle)
-3. Click **Load unpacked**
-4. Navigate to the `extension/` folder inside the cloned repo and select it
+1. Open your browser extension page:
+   - Chrome: `chrome://extensions`
+   - Edge / Edge Beta: `edge://extensions`
+2. Enable **Developer mode**.
+3. Click **Load unpacked**.
+4. Select the repo's `extension/` folder.
 
 **3. Open a new tab**
 
-You'll see Tab Hub.
+You should see Tab Hub.
 
 ---
 
-## How it works
+## How It Works
 
-```
+```text
 You open a new tab
   -> Tab Hub shows your open tabs grouped by domain
-  -> Your common sites sit at the top for quick access
-  -> Homepages (Gmail, X, etc.) get their own group near the top
-  -> Click any tab title to jump to it
-  -> Close groups you're done with (swoosh + confetti)
+  -> Common sites stay at the top for quick access
+  -> Homepages get their own cleanup group
+  -> Click a tab title to jump to that existing tab
+  -> Close tabs or groups when you're done
   -> Save tabs for later before closing them
-  -> Switch to Tab Tree when you want lightweight temporary folders for links
-  -> Right-click a page to add it to a Tab Tree folder without opening bookmarks
+  -> Use Tab Tree for temporary folders of links
+  -> Right-click a page to add it to a Tab Tree folder
+  -> Use the toolbar popup for theme and data transfer
 ```
 
-Everything runs inside the Chrome extension. No external server, no accounts, no data sent anywhere. Saved tabs, common sites, settings, and Tab Tree data are stored in `chrome.storage.local`.
+Dashboard is the fixed new tab entry. Tab Tree is an optional feature and is enabled by default.
 
 ---
 
-## Tech stack
+## Tab Tree
+
+Tab Tree is intentionally lighter than bookmarks.
+
+- There is one Tab Tree.
+- The root contains folders.
+- Folders contain tab links.
+- Folders do not contain nested folders.
+- Clicking a tab node opens the saved URL in a new browser tab.
+- Adding the same URL to the same folder updates that item and moves it to the latest position.
+- The same URL can still exist in different folders.
+
+You can add links from the Tab Tree page or from the browser right-click menu.
+
+---
+
+## Toolbar Popup
+
+Click the Tab Hub icon in the browser toolbar to open controls:
+
+- Toggle Tab Tree on/off
+- Open Tab Tree
+- Choose theme: **System**, **Light**, or **Dark**
+- Export data
+- Import and merge data
+- Replace local data from a backup
+
+---
+
+## Data Transfer
+
+Chrome, Edge, and Edge Beta keep extension local storage separately. Tab Hub does not automatically sync between them.
+
+Use **Export data** in one browser and **Import merge** in another browser to move data across browsers.
+
+Export creates a local JSON file named like:
+
+```text
+tab-hub-backup-YYYY-MM-DD.json
+```
+
+Import modes:
+
+- **Import merge** keeps existing data and adds backup data. Common sites are deduped by URL. Tab Tree folders are merged by folder name. Repeated URLs in the same folder are updated and moved to the latest position.
+- **Replace data** overwrites the current browser's Tab Hub data with the selected backup.
+
+The backup includes feature flags, theme settings, Common sites, Saved for later, Tab Tree data, and metadata.
+
+---
+
+## Storage
+
+Tab Hub stores data in `chrome.storage.local` under a versioned `tabOutStore` envelope:
+
+```text
+tabOutStore
+  -> features
+  -> settings
+  -> data.dashboard
+  -> data.tabTree
+  -> meta
+```
+
+Legacy `favorites` and `deferred` keys are migrated into `data.dashboard` when the store is created.
+
+---
+
+## Tech Stack
 
 | What | How |
 |------|-----|
 | Extension | Chrome Manifest V3 |
-| Storage | chrome.storage.local |
-| Sound | Web Audio API (synthesized, no files) |
-| Animations | CSS transitions + JS confetti particles |
+| New tab | `chrome_url_overrides.newtab` |
+| Storage | `chrome.storage.local` |
+| Context menu | `chrome.contextMenus` |
+| Page injection | `chrome.scripting` for inline Tab Tree folder creation |
+| Sound | Web Audio API |
+| UI | Plain HTML, CSS, and JavaScript |
+
+---
+
+## Update
+
+```bash
+git pull
+```
+
+Then reload Tab Hub in the browser extensions page.
 
 ---
 
 ## License
 
 MIT
-
----
-
-Built by [Zara](https://x.com/zarazhangrui)

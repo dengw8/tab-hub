@@ -1,42 +1,46 @@
-# AGENTS.md -- Tab Hub: Setup & Onboarding Guide for Coding Agents
+# AGENTS.md -- Tab Hub Setup & Onboarding Guide for Coding Agents
 
-You're installing **Tab Hub** for the user. Your job is not just to set it up -- it's to get them excited about using it.
+You're helping the user install or update **Tab Hub**. Your job is not just to load the extension; it is to help them understand why it is useful and where the controls live.
 
 ***
 
-## Step 0 -- Introduce the product
+## Step 0 -- Introduce The Product
 
 Before doing anything technical, tell the user what they're about to get:
 
-> **Tab Hub** replaces your new tab page with a clean dashboard of everything you have open, grouped by domain.
+> **Tab Hub** is a local Chromium extension for Chrome, Edge, and Edge Beta. It replaces the new tab page with a focused dashboard for open tabs, plus a lightweight Tab Tree for temporary links that are not worth turning into bookmarks.
 >
-> Here's what makes it great:
+> Here's what makes it useful:
 >
-> - **See all your open tabs at a glance** grouped by domain on a grid
-> - **Common sites** lets users add their own frequently visited websites at the top
-> - **Homepages group** pulls Gmail, X, LinkedIn, YouTube, GitHub homepages into one card for easy cleanup
-> - **Close tabs with style** satisfying swoosh sound + confetti burst
-> - **Duplicate detection** flags when you have the same page open twice
-> - **Click any tab title to jump to it** even across different Chrome windows
-> - **Save for later** bookmark individual tabs to a checklist before closing them
-> - **100% local** no server, no accounts, no data sent anywhere
+> - **Dashboard new tab** shows open tabs grouped by domain
+> - **Common sites** lets users pin frequently visited websites at the top
+> - **Homepages group** pulls Gmail, X, LinkedIn, YouTube, GitHub homepages into one cleanup card
+> - **Duplicate detection** flags repeated pages and offers one-click cleanup
+> - **Click any tab title** to jump to the existing tab, even across windows
+> - **Save for later** keeps individual tabs in a local checklist before closing them
+> - **Tab Tree** stores temporary links in folders without deep bookmark-style nesting
+> - **Right-click add to Tab Tree** lets users add the current page to an existing folder or create a folder inline
+> - **Toolbar popup controls** manage Tab Tree, theme, and data transfer
+> - **Import/export** moves Tab Hub data between Chrome, Edge, and Edge Beta with a local JSON backup
+> - **Light/dark themes** can follow the system or stay fixed
+> - **100% local** no server, no accounts, no Tab Hub backend
 >
-> It's just a Chrome extension. Setup takes about 1 minute.
+> It is just a Chromium extension. Setup takes about 1 minute.
 
 ***
 
-## Step 1 -- Clone the repo
+## Step 1 -- Clone The Repo
 
 ```bash
-git clone https://github.com/zarazhangrui/tab-out.git
-cd tab-out
+git clone https://github.com/dengw8/tab-hub.git
+cd tab-hub
 ```
 
 ***
 
-## Step 2 -- Install the Chrome extension
+## Step 2 -- Install The Extension
 
-This is the one step that requires manual action from the user. Make it as easy as possible.
+This step requires manual action from the user. Make it easy.
 
 **First**, print the full path to the `extension/` folder:
 
@@ -50,24 +54,24 @@ echo "Extension folder: $(cd extension && pwd)"
 - Linux: `cd extension && pwd | xclip -selection clipboard 2>/dev/null || echo "Path: $(pwd)"`
 - Windows: `cd extension && echo %CD% | clip`
 
-**Then**, open the extensions page:
+**Then**, open the extension manager:
 
-```bash
-open "chrome://extensions"
-```
+- Chrome: `open "chrome://extensions"`
+- Edge or Edge Beta: `open "edge://extensions"`
 
-**Then**, walk the user through it step by step:
+**Then**, walk the user through it:
 
 > I've copied the extension folder path to your clipboard. Now:
 >
-> 1. You should see Chrome's extensions page. In the **top-right corner**, toggle on **Developer mode** (it's a switch).
-> 2. Once Developer mode is on, you'll see a button called **"Load unpacked"** appear in the top-left. Click it.
-> 3. A file picker will open. **Press Cmd+Shift+G** (Mac) or **Ctrl+L** (Windows/Linux) to open the "Go to folder" bar, then **paste** the path I copied (Cmd+V / Ctrl+V) and press Enter.
-> 4. Click **"Select"** or **"Open"** and the extension will install.
+> 1. Open the browser extensions page.
+> 2. Turn on **Developer mode**.
+> 3. Click **Load unpacked**.
+> 4. In the file picker, use **Cmd+Shift+G** on macOS or the address bar on Windows/Linux, paste the copied path, and press Enter.
+> 5. Click **Select** or **Open**.
 >
-> You should see "Tab Hub" appear in your extensions list.
+> You should see **Tab Hub** in the extensions list.
 
-**Also**, open the file browser directly to the extension folder as a fallback:
+**Also**, open the extension folder as a fallback:
 
 - macOS: `open extension/`
 - Linux: `xdg-open extension/`
@@ -75,30 +79,36 @@ open "chrome://extensions"
 
 ***
 
-## Step 3 -- Show them around
+## Step 3 -- Show Them Around
 
 Once the extension is loaded:
 
-> You're all set! Open a **new tab** and you'll see Tab Hub.
+> Open a **new tab** and you'll see Tab Hub.
 >
-> Here's how it works:
->
-> 1. **Common sites** sits at the top. Click **Add site** to save your own frequently used URLs there.
-> 2. **Your open tabs are grouped by domain** in a grid layout underneath.
-> 3. **Homepages** (Gmail inbox, X home, YouTube, etc.) are in their own group near the top.
-> 4. **Click any tab title** to jump directly to that tab.
-> 5. **Click the X** next to any tab to close just that one (with swoosh + confetti).
-> 6. **Click "Close all N tabs"** on a group to close the whole thing.
-> 7. **Duplicate tabs** are flagged with an amber "(2x)" badge. Click "Close duplicates" to keep one copy.
-> 8. **Save a tab for later** by clicking the bookmark icon before closing it. Saved tabs appear in the sidebar.
->
-> That's it! No server to run, no config files. Everything works right away.
+> 1. **Dashboard** is the fixed new tab entry and cannot be disabled.
+> 2. **Common sites** sits at the top. Click **Add site** to save frequently used URLs.
+> 3. **Open tabs** are grouped by domain underneath.
+> 4. **Homepages** are grouped near the top for easy cleanup.
+> 5. **Click any tab title** to jump directly to that existing tab.
+> 6. **Close individual tabs or whole groups** from the dashboard.
+> 7. **Duplicate tabs** show an amber badge and can be cleaned up.
+> 8. **Save for later** uses the bookmark icon to move a tab into the local checklist.
+> 9. **Tab Tree** is available from the top nav or toolbar popup when enabled.
+> 10. **Right-click a webpage** and choose **Add current page to Tab Tree** to add it directly to a folder.
+> 11. **Toolbar popup** lets you toggle Tab Tree, open Tab Tree, switch theme, export data, import/merge data, or replace data.
 
 ***
 
 ## Key Facts
 
-- Tab Hub is a pure Chrome extension. No server, no Node.js, no npm.
-- Saved tabs and common sites are stored in `chrome.storage.local` (persist across sessions).
-- 100% local. No data is sent to any external service.
-- To update: `cd tab-out && git pull`, then reload the extension in `chrome://extensions`.
+- Tab Hub is a pure Manifest V3 Chromium extension.
+- No server, no npm install, no build step.
+- Dashboard is always the new tab page.
+- Tab Tree is optional and enabled by default.
+- Tab Tree structure is intentionally shallow: root -> folders -> tabs.
+- Data is stored in `chrome.storage.local` under the versioned `tabOutStore` envelope.
+- The store includes `features`, `settings`, `data.dashboard`, `data.tabTree`, and `meta`.
+- Chrome, Edge, and Edge Beta do not automatically share extension local storage; use export/import for browser-to-browser transfer.
+- Export files are local JSON backups named like `tab-hub-backup-YYYY-MM-DD.json`.
+- Import supports **merge** and **replace** modes.
+- To update: `cd tab-hub && git pull`, then reload the extension in the browser extensions page.

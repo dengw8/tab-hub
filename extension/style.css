@@ -5,6 +5,7 @@
    ============================================================ */
 
 :root {
+  color-scheme: light;
   --ink: #1a1613;
   --paper: #f8f5f0;
   --warm-gray: #e8e2da;
@@ -18,6 +19,45 @@
   --status-abandoned: #b35a5a;
   --card-bg: #fffdf9;
   --shadow: rgba(26, 22, 19, 0.06);
+  --texture-opacity: 1;
+  --app-nav-bg: rgba(255, 253, 249, 0.72);
+  --surface-soft: rgba(255, 255, 255, 0.55);
+  --surface-button: rgba(255, 255, 255, 0.58);
+  --input-bg: #fff;
+  --modal-overlay: rgba(26, 22, 19, 0.42);
+  --modal-shadow: rgba(26, 22, 19, 0.18);
+  --hover-bg: rgba(154, 145, 138, 0.1);
+  --accent-amber-soft: rgba(200, 113, 58, 0.08);
+  --accent-sage-soft: rgba(90, 122, 98, 0.08);
+  --accent-rose-soft: rgba(179, 90, 90, 0.08);
+}
+
+:root[data-resolved-theme="dark"] {
+  color-scheme: dark;
+  --ink: #f4eee6;
+  --paper: #12110f;
+  --warm-gray: #342f2a;
+  --muted: #a79b8f;
+  --accent-amber: #d58a52;
+  --accent-sage: #7fa184;
+  --accent-slate: #8fa3b3;
+  --accent-rose: #cf7470;
+  --status-active: #7fa184;
+  --status-cooling: #d2a34f;
+  --status-abandoned: #cf7470;
+  --card-bg: #1b1815;
+  --shadow: rgba(0, 0, 0, 0.36);
+  --texture-opacity: 0.68;
+  --app-nav-bg: rgba(27, 24, 21, 0.78);
+  --surface-soft: rgba(244, 238, 230, 0.06);
+  --surface-button: rgba(244, 238, 230, 0.08);
+  --input-bg: #151310;
+  --modal-overlay: rgba(0, 0, 0, 0.58);
+  --modal-shadow: rgba(0, 0, 0, 0.46);
+  --hover-bg: rgba(167, 155, 143, 0.12);
+  --accent-amber-soft: rgba(213, 138, 82, 0.14);
+  --accent-sage-soft: rgba(127, 161, 132, 0.14);
+  --accent-rose-soft: rgba(207, 116, 112, 0.14);
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -36,6 +76,7 @@ body::before {
   position: fixed;
   inset: 0;
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
+  opacity: var(--texture-opacity);
   pointer-events: none;
   z-index: 0;
 }
@@ -88,7 +129,7 @@ header {
   padding: 4px;
   border: 1px solid var(--warm-gray);
   border-radius: 8px;
-  background: rgba(255, 253, 249, 0.72);
+  background: var(--app-nav-bg);
 }
 
 .app-nav-item,
@@ -123,7 +164,7 @@ header {
 
 .app-nav-item:hover,
 .app-nav-icon:hover {
-  background: rgba(154, 145, 138, 0.1);
+  background: var(--hover-bg);
   color: var(--ink);
 }
 
@@ -189,7 +230,7 @@ header {
   border-radius: 6px;
   border: none;
   background: var(--accent-amber);
-  color: white;
+  color: var(--card-bg);
   cursor: pointer;
   transition: all 0.2s;
   white-space: nowrap;
@@ -378,7 +419,7 @@ header {
 
 .mission-tag.abandoned {
   color: var(--status-abandoned);
-  background: rgba(179, 90, 90, 0.08);
+  background: var(--accent-rose-soft);
 }
 
 /* Tab indicator badge — shows how many Chrome tabs are still open for this mission */
@@ -389,7 +430,7 @@ header {
   font-size: 10px;
   font-weight: 500;
   color: var(--accent-amber);
-  background: rgba(200, 113, 58, 0.08);
+  background: var(--accent-amber-soft);
   padding: 2px 8px;
   border-radius: 3px;
 }
@@ -420,7 +461,7 @@ header {
   padding: 8px 4px;
   border-radius: 0;
   border: none;
-  border-bottom: 1px solid rgba(154, 145, 138, 0.1);
+  border-bottom: 1px solid var(--hover-bg);
   position: relative;
   display: flex;
   align-items: center;
@@ -495,17 +536,17 @@ header {
 
 .chip-action:hover {
   opacity: 1;
-  background: rgba(154, 145, 138, 0.1);
+  background: var(--hover-bg);
 }
 
 .chip-save:hover {
   color: var(--accent-sage);
-  background: rgba(90, 122, 98, 0.08);
+  background: var(--accent-sage-soft);
 }
 
 .chip-close:hover {
   color: var(--status-abandoned);
-  background: rgba(179, 90, 90, 0.08);
+  background: var(--accent-rose-soft);
 }
 
 .page-chip.clickable {
@@ -893,7 +934,7 @@ footer { animation: fadeUp 0.5s ease 0.65s both; }
   font-family: 'DM Sans', sans-serif;
   font-size: 12px;
   font-weight: 500;
-  color: #fff;
+  color: var(--card-bg);
   background: var(--accent-sage);
   border: none;
   border-radius: 5px;
@@ -931,7 +972,7 @@ footer { animation: fadeUp 0.5s ease 0.65s both; }
 }
 
 .update-banner-dismiss:hover {
-  background: rgba(26, 22, 19, 0.06);
+  background: var(--hover-bg);
   color: var(--ink);
 }
 
@@ -1085,7 +1126,7 @@ footer { animation: fadeUp 0.5s ease 0.65s both; }
 
 .favorite-action:hover {
   opacity: 1;
-  background: rgba(154, 145, 138, 0.1);
+  background: var(--hover-bg);
 }
 
 .favorite-action.edit:hover {
@@ -1103,7 +1144,7 @@ footer { animation: fadeUp 0.5s ease 0.65s both; }
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(26, 22, 19, 0.42);
+  background: var(--modal-overlay);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1116,7 +1157,7 @@ footer { animation: fadeUp 0.5s ease 0.65s both; }
   background: var(--card-bg);
   border: 1px solid var(--warm-gray);
   border-radius: 12px;
-  box-shadow: 0 20px 60px rgba(26, 22, 19, 0.18);
+  box-shadow: 0 20px 60px var(--modal-shadow);
   padding: 20px;
 }
 
@@ -1151,7 +1192,7 @@ footer { animation: fadeUp 0.5s ease 0.65s both; }
 }
 
 .modal-close:hover {
-  background: rgba(154, 145, 138, 0.1);
+  background: var(--hover-bg);
   color: var(--ink);
 }
 
@@ -1178,7 +1219,7 @@ footer { animation: fadeUp 0.5s ease 0.65s both; }
   width: 100%;
   border: 1px solid var(--warm-gray);
   border-radius: 8px;
-  background: #fff;
+  background: var(--input-bg);
   color: var(--ink);
   font: inherit;
   font-size: 14px;
@@ -1532,7 +1573,7 @@ footer { animation: fadeUp 0.5s ease 0.65s both; }
   width: min(260px, 100%);
   border: 1px solid var(--warm-gray);
   border-radius: 8px;
-  background: #fff;
+  background: var(--input-bg);
   color: var(--ink);
   font: inherit;
   font-size: 13px;
@@ -1571,7 +1612,7 @@ footer { animation: fadeUp 0.5s ease 0.65s both; }
 }
 
 .tab-tree-row:hover {
-  background: rgba(154, 145, 138, 0.08);
+  background: var(--hover-bg);
 }
 
 .tab-tree-row.dragging {
@@ -1598,7 +1639,7 @@ footer { animation: fadeUp 0.5s ease 0.65s both; }
 }
 
 .tab-tree-row.drop-inside {
-  background: rgba(200, 113, 58, 0.1);
+  background: var(--accent-amber-soft);
 }
 
 .tree-toggle,
@@ -1681,7 +1722,7 @@ footer { animation: fadeUp 0.5s ease 0.65s both; }
 }
 
 .tree-icon-btn:hover {
-  background: rgba(154, 145, 138, 0.12);
+  background: var(--hover-bg);
   color: var(--ink);
 }
 
@@ -1723,8 +1764,20 @@ footer { animation: fadeUp 0.5s ease 0.65s both; }
   padding: 14px;
   border: 1px solid var(--warm-gray);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.55);
+  background: var(--surface-soft);
   cursor: pointer;
+}
+
+.settings-field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 10px;
+  padding: 14px;
+  border: 1px solid var(--warm-gray);
+  border-radius: 8px;
+  background: var(--surface-soft);
 }
 
 .settings-toggle input {
@@ -1733,19 +1786,40 @@ footer { animation: fadeUp 0.5s ease 0.65s both; }
 }
 
 .settings-toggle strong,
-.settings-toggle small {
+.settings-toggle small,
+.settings-field strong,
+.settings-field small {
   display: block;
 }
 
-.settings-toggle strong {
+.settings-toggle strong,
+.settings-field strong {
   font-size: 14px;
   color: var(--ink);
 }
 
-.settings-toggle small {
+.settings-toggle small,
+.settings-field small {
   margin-top: 2px;
   font-size: 12px;
   color: var(--muted);
+}
+
+.settings-field select {
+  min-width: 118px;
+  border: 1px solid var(--warm-gray);
+  border-radius: 7px;
+  background: var(--input-bg);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  padding: 8px 10px;
+  outline: none;
+}
+
+.settings-field select:focus {
+  border-color: var(--accent-amber);
+  box-shadow: 0 0 0 3px var(--accent-amber-soft);
 }
 
 .tree-picker-body {
@@ -1800,7 +1874,7 @@ footer { animation: fadeUp 0.5s ease 0.65s both; }
 }
 
 .tree-picker-close:hover {
-  background: rgba(154, 145, 138, 0.12);
+  background: var(--hover-bg);
   color: var(--ink);
 }
 
@@ -1837,7 +1911,7 @@ footer { animation: fadeUp 0.5s ease 0.65s both; }
   margin: 14px 0 8px;
   border: 1px dashed var(--warm-gray);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.46);
+  background: var(--surface-soft);
   color: var(--ink);
   cursor: pointer;
   font: inherit;
@@ -1849,7 +1923,7 @@ footer { animation: fadeUp 0.5s ease 0.65s both; }
 
 .tree-picker-new:hover {
   border-color: var(--accent-amber);
-  background: rgba(200, 113, 58, 0.08);
+  background: var(--accent-amber-soft);
 }
 
 .tree-picker-new span:first-child {
@@ -1874,7 +1948,7 @@ footer { animation: fadeUp 0.5s ease 0.65s both; }
   flex: 1;
   border: 1px solid var(--warm-gray);
   border-radius: 8px;
-  background: #fff;
+  background: var(--input-bg);
   color: var(--ink);
   font: inherit;
   font-size: 13px;
@@ -1911,7 +1985,7 @@ footer { animation: fadeUp 0.5s ease 0.65s both; }
   gap: 10px;
   border: none;
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.58);
+  background: var(--surface-button);
   color: var(--ink);
   cursor: pointer;
   font: inherit;
@@ -1920,7 +1994,7 @@ footer { animation: fadeUp 0.5s ease 0.65s both; }
 }
 
 .tree-picker-folder:hover {
-  background: rgba(154, 145, 138, 0.12);
+  background: var(--hover-bg);
 }
 
 .tree-picker-folder-name {
