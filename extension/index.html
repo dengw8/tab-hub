@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Tab Out</title>
+  <title>Tab Hub</title>
 
   <!-- Google Fonts: Newsreader (for headings/numbers) + DM Sans (for body text) -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -30,117 +30,163 @@
         <!-- "Friday, April 4, 2026" — written by getDateDisplay() in app.js -->
         <div class="date" id="dateDisplay"></div>
       </div>
-    </header>
-
-    <!-- ================================================================
-       TAB OUT DUPES BANNER — appears when you have extra Tab Out tabs open
-       Hidden by default; app.js shows it when dupeTabOutCount > 1
-       ================================================================ -->
-    <div class="tab-cleanup-banner" id="tabOutDupeBanner" style="display:none">
-      <div class="tab-cleanup-left">
-        <div class="tab-cleanup-icon">
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5"
+      <nav class="app-nav" aria-label="Tab Hub features">
+        <button class="app-nav-item active" type="button" data-action="show-dashboard"
+          id="dashboardNavButton">Dashboard</button>
+        <button class="app-nav-item" type="button" data-action="show-tab-tree" id="tabTreeNavButton">Tab Tree</button>
+        <button class="app-nav-icon" type="button" data-action="open-settings-modal" aria-label="Settings"
+          title="Settings">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8"
             stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round"
-              d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 0 1-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 0 1 1.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 0 0-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 0 1-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 0 0-3.375-3.375h-1.5a1.125 1.125 0 0 1-1.125-1.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H9.75" />
+              d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.219.127.325.2.734.22 1.072.047l1.157-.59a1.125 1.125 0 0 1 1.37.21l1.833 1.832c.389.389.471.995.21 1.37l-.59 1.157c-.173.338-.153.747.047 1.072.044.072.086.145.127.219.184.332.496.582.87.645l1.281.213c.542.09.94.56.94 1.11v2.593c0 .55-.398 1.02-.94 1.11l-1.281.213c-.374.063-.686.313-.87.645a6.52 6.52 0 0 1-.127.219c-.2.325-.22.734-.047 1.072l.59 1.157c.261.375.179.981-.21 1.37l-1.832 1.833a1.125 1.125 0 0 1-1.37.21l-1.157-.59c-.338-.173-.747-.153-1.072.047a6.52 6.52 0 0 1-.219.127c-.332.184-.582.496-.645.87l-.213 1.281c-.09.542-.56.94-1.11.94h-2.593c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.063-.374-.313-.686-.645-.87a6.52 6.52 0 0 1-.219-.127c-.325-.2-.734-.22-1.072-.047l-1.157.59a1.125 1.125 0 0 1-1.37-.21l-1.833-1.832a1.125 1.125 0 0 1-.21-1.37l.59-1.157c.173-.338.153-.747-.047-1.072a6.52 6.52 0 0 1-.127-.219c-.184-.332-.496-.582-.87-.645l-1.281-.213A1.125 1.125 0 0 1 2.25 14.89v-2.593c0-.55.398-1.02.94-1.11l1.281-.213c.374-.063.686-.313.87-.645.04-.074.083-.147.127-.219.2-.325.22-.734.047-1.072l-.59-1.157a1.125 1.125 0 0 1 .21-1.37l1.832-1.833a1.125 1.125 0 0 1 1.37-.21l1.157.59c.338.173.747.153 1.072-.047.072-.044.145-.086.219-.127.332-.184.582-.496.645-.87l.213-1.281Z" />
+            <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
           </svg>
-        </div>
-        <div class="tab-cleanup-text">
-          You have <strong id="tabOutDupeCount"></strong> Tab Out tabs open. Keep just this one?
-        </div>
-      </div>
-      <button class="tab-cleanup-btn" data-action="close-tabout-dupes">Close extras</button>
-    </div>
+        </button>
+      </nav>
+    </header>
 
-    <!-- ================================================================
+    <main class="feature-view dashboard-view" id="dashboardView">
+
+      <!-- ================================================================
+       TAB HUB DUPES BANNER — appears when you have extra Tab Hub tabs open
+       Hidden by default; app.js shows it when dupeTabOutCount > 1
+       ================================================================ -->
+      <div class="tab-cleanup-banner" id="tabOutDupeBanner" style="display:none">
+        <div class="tab-cleanup-left">
+          <div class="tab-cleanup-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5"
+              stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round"
+                d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 0 1-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 0 1 1.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 0 0-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 0 1-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 0 0-3.375-3.375h-1.5a1.125 1.125 0 0 1-1.125-1.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H9.75" />
+            </svg>
+          </div>
+          <div class="tab-cleanup-text">
+            You have <strong id="tabOutDupeCount"></strong> Tab Hub tabs open. Keep just this one?
+          </div>
+        </div>
+        <button class="tab-cleanup-btn" data-action="close-tabout-dupes">Close extras</button>
+      </div>
+
+      <!-- ================================================================
        COMMON SITES — user-configured shortcuts shown near the top
        ================================================================ -->
-    <section class="favorites-section" id="favoritesSection">
-      <div class="section-header favorites-header">
-        <h2>Common sites</h2>
-        <div class="section-line"></div>
-        <button class="action-btn" type="button" data-action="open-favorite-modal">Add site</button>
-      </div>
+      <section class="favorites-section" id="favoritesSection">
+        <div class="section-header favorites-header">
+          <h2>Common sites</h2>
+          <div class="section-line"></div>
+          <button class="action-btn" type="button" data-action="open-favorite-modal">Add site</button>
+        </div>
 
-      <div class="favorites-empty" id="favoritesEmpty" style="display:none">
-        <div class="favorites-empty-title">Add the sites you open all the time.</div>
-        <div class="favorites-empty-subtitle">No defaults. Just your own shortcuts.</div>
-        <button class="action-btn primary" type="button" data-action="open-favorite-modal">Add your first site</button>
-      </div>
+        <div class="favorites-empty" id="favoritesEmpty" style="display:none">
+          <div class="favorites-empty-title">Add the sites you open all the time.</div>
+          <div class="favorites-empty-subtitle">No defaults. Just your own shortcuts.</div>
+          <button class="action-btn primary" type="button" data-action="open-favorite-modal">Add your first
+            site</button>
+        </div>
 
-      <div class="favorites-grid" id="favoritesGrid" style="display:none"></div>
-    </section>
+        <div class="favorites-grid" id="favoritesGrid" style="display:none"></div>
+      </section>
 
-    <!-- ================================================================
+      <!-- ================================================================
        MAIN CONTENT AREA — two-column layout
        Left: open tabs (domain/mission cards)
        Right: saved for later checklist
        The right column only renders when it has items (JS controls this)
        ================================================================ -->
-    <div class="dashboard-columns" id="dashboardColumns">
+      <div class="dashboard-columns" id="dashboardColumns">
 
-      <!-- LEFT COLUMN: Open tabs -->
-      <div class="active-section" id="openTabsSection" style="display:none">
-        <div class="section-header">
-          <h2 id="openTabsSectionTitle">Right now</h2>
-          <div class="section-line"></div>
-          <div class="section-count" id="openTabsSectionCount"></div>
-        </div>
-        <div class="missions" id="openTabsMissions"></div>
-      </div>
-
-      <!-- RIGHT COLUMN: Saved for Later checklist -->
-      <div class="deferred-column" id="deferredColumn" style="display:none">
-        <div class="section-header">
-          <h2>Saved for later</h2>
-          <div class="section-line"></div>
-          <div class="section-count" id="deferredCount"></div>
+        <!-- LEFT COLUMN: Open tabs -->
+        <div class="active-section" id="openTabsSection" style="display:none">
+          <div class="section-header">
+            <h2 id="openTabsSectionTitle">Right now</h2>
+            <div class="section-line"></div>
+            <div class="section-count" id="openTabsSectionCount"></div>
+          </div>
+          <div class="missions" id="openTabsMissions"></div>
         </div>
 
-        <!-- Active checklist items — injected by renderDeferredList() in app.js -->
-        <div class="deferred-list" id="deferredList"></div>
+        <!-- RIGHT COLUMN: Saved for Later checklist -->
+        <div class="deferred-column" id="deferredColumn" style="display:none">
+          <div class="section-header">
+            <h2>Saved for later</h2>
+            <div class="section-line"></div>
+            <div class="section-count" id="deferredCount"></div>
+          </div>
 
-        <!-- Empty state — shown when no active deferred tabs -->
-        <div class="deferred-empty" id="deferredEmpty" style="display:none">
-          Nothing saved. Living in the moment.
-        </div>
+          <!-- Active checklist items — injected by renderDeferredList() in app.js -->
+          <div class="deferred-list" id="deferredList"></div>
 
-        <!-- Archive section — collapsed by default -->
-        <div class="deferred-archive" id="deferredArchive" style="display:none">
-          <button class="archive-toggle" id="archiveToggle">
-            <svg class="archive-chevron" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
-              stroke-width="2" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
-            </svg>
-            Archive
-            <span class="archive-count" id="archiveCount"></span>
-          </button>
-          <div class="archive-body" id="archiveBody" style="display:none">
-            <input type="text" class="archive-search" id="archiveSearch" placeholder="Search archived tabs...">
-            <div class="archive-list" id="archiveList"></div>
+          <!-- Empty state — shown when no active deferred tabs -->
+          <div class="deferred-empty" id="deferredEmpty" style="display:none">
+            Nothing saved. Living in the moment.
+          </div>
+
+          <!-- Archive section — collapsed by default -->
+          <div class="deferred-archive" id="deferredArchive" style="display:none">
+            <button class="archive-toggle" id="archiveToggle">
+              <svg class="archive-chevron" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
+                stroke-width="2" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+              </svg>
+              Archive
+              <span class="archive-count" id="archiveCount"></span>
+            </button>
+            <div class="archive-body" id="archiveBody" style="display:none">
+              <input type="text" class="archive-search" id="archiveSearch" placeholder="Search archived tabs...">
+              <div class="archive-list" id="archiveList"></div>
+            </div>
           </div>
         </div>
-      </div>
 
-    </div><!-- end .dashboard-columns -->
+      </div><!-- end .dashboard-columns -->
 
-    <!-- ================================================================
+      <!-- ================================================================
        FOOTER — global stats + refresh control
        ================================================================ -->
-    <footer>
-      <div class="footer-stats">
-        <div class="stat">
-          <div class="stat-num" id="statTabs">—</div>
-          <div class="stat-label">Open tabs</div>
+      <footer>
+        <div class="footer-stats">
+          <div class="stat">
+            <div class="stat-num" id="statTabs">—</div>
+            <div class="stat-label">Open tabs</div>
+          </div>
         </div>
-      </div>
-      <div class="last-refresh">
-        <span style="color: var(--muted); font-size: 11px;"><a href="https://github.com/zarazhangrui/tab-out"
-            target="_top" style="color: var(--muted); text-decoration: underline; text-underline-offset: 2px;">Tab
-            Out</a> by <a href="https://x.com/zarazhangrui" target="_top"
-            style="color: var(--muted); text-decoration: underline; text-underline-offset: 2px;">Zara</a></span>
-      </div>
-    </footer>
+        <div class="last-refresh">
+          <span style="color: var(--muted); font-size: 11px;"><a href="https://github.com/zarazhangrui/tab-out"
+              target="_top" style="color: var(--muted); text-decoration: underline; text-underline-offset: 2px;">Tab
+              Out</a> by <a href="https://x.com/zarazhangrui" target="_top"
+              style="color: var(--muted); text-decoration: underline; text-underline-offset: 2px;">Zara</a></span>
+        </div>
+      </footer>
+
+    </main>
+
+    <!-- ================================================================
+       TAB TREE — optional feature view
+       ================================================================ -->
+    <main class="feature-view tab-tree-view" id="tabTreeView" style="display:none">
+      <section class="tab-tree-shell">
+        <div class="tab-tree-toolbar">
+          <div>
+            <div class="tab-tree-kicker">Temporary structure</div>
+            <h2>Tab Tree</h2>
+          </div>
+          <div class="tab-tree-actions">
+            <input type="search" class="tab-tree-search" id="tabTreeSearch" placeholder="Search tree..."
+              autocomplete="off" spellcheck="false">
+            <button class="action-btn primary" type="button" data-action="add-tree-folder" data-parent-id="root">Add
+              folder</button>
+          </div>
+        </div>
+
+        <div class="tab-tree-disabled" id="tabTreeDisabled" style="display:none">
+          <div class="tab-tree-empty-title">Tab Tree is turned off.</div>
+          <button class="action-btn primary" type="button" data-action="enable-tab-tree">Turn it on</button>
+        </div>
+
+        <div class="tab-tree-surface" id="tabTreeSurface"></div>
+      </section>
+    </main>
 
   </div><!-- end .container -->
 
@@ -183,6 +229,79 @@
         <div class="modal-actions">
           <button class="action-btn" type="button" data-action="close-favorite-modal">Cancel</button>
           <button class="action-btn primary" type="submit">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ================================================================
+     SETTINGS MODAL — feature switches
+     ================================================================ -->
+  <div class="modal-backdrop" id="settingsModal" style="display:none">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="settingsModalTitle">
+      <div class="modal-header">
+        <h2 id="settingsModalTitle">Settings</h2>
+        <button class="modal-close" type="button" data-action="close-settings-modal" aria-label="Close">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2"
+            stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+
+      <label class="settings-toggle">
+        <input type="checkbox" id="tabTreeEnabledInput">
+        <span>
+          <strong>Tab Tree</strong>
+          <small>Show the temporary tree feature in Tab Hub.</small>
+        </span>
+      </label>
+
+      <div class="modal-actions">
+        <button class="action-btn" type="button" data-action="close-settings-modal">Cancel</button>
+        <button class="action-btn primary" type="button" data-action="save-settings">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================================================================
+     TAB TREE NODE MODAL — add top-level folders or tabs inside a folder
+     ================================================================ -->
+  <div class="modal-backdrop" id="treeTabModal" style="display:none">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="treeTabModalTitle">
+      <div class="modal-header">
+        <h2 id="treeTabModalTitle">Add tab</h2>
+        <button class="modal-close" type="button" data-action="close-tree-tab-modal" aria-label="Close">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2"
+            stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+
+      <form class="favorite-form" id="treeTabForm">
+        <input type="hidden" id="treeTabModeInput">
+        <input type="hidden" id="treeNodeTypeInput">
+        <input type="hidden" id="treeTabParentInput">
+        <input type="hidden" id="treeTabNodeInput">
+
+        <div id="treeTabUrlGroup">
+          <label class="favorite-label" for="treeTabUrlInput">URL</label>
+          <input type="text" class="favorite-input" id="treeTabUrlInput" placeholder="https://example.com"
+            autocomplete="off" spellcheck="false">
+        </div>
+
+        <div id="treeTabNameGroup" style="display:none">
+          <label class="favorite-label" for="treeTabNameInput" id="treeTabNameLabel">Name</label>
+          <input type="text" class="favorite-input" id="treeTabNameInput" placeholder="Page title" autocomplete="off"
+            spellcheck="false">
+        </div>
+
+        <div class="favorite-error" id="treeTabError" style="display:none"></div>
+
+        <div class="modal-actions">
+          <button class="action-btn" type="button" data-action="close-tree-tab-modal">Cancel</button>
+          <button class="action-btn primary" type="submit" id="treeTabSubmitButton">Continue</button>
         </div>
       </form>
     </div>

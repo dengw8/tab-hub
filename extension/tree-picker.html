@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Add to Tab Tree</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link
+    href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;0,6..72,500;1,6..72,300;1,6..72,400&family=DM+Sans:wght@300;400;500;600&display=swap"
+    rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+
+<body class="tree-picker-body">
+  <main class="tree-picker">
+    <div class="tree-picker-header">
+      <div>
+        <div class="tree-picker-kicker">Tab Tree</div>
+        <h1>Add current page</h1>
+      </div>
+      <button class="tree-picker-close" type="button" id="closePickerButton" aria-label="Close">×</button>
+    </div>
+
+    <section class="tree-picker-page">
+      <div class="tree-picker-page-title" id="pendingTitle">Loading...</div>
+      <div class="tree-picker-page-url" id="pendingUrl"></div>
+    </section>
+
+    <button class="tree-picker-new" type="button" id="newFolderButton">
+      <span>+</span>
+      <span>New folder</span>
+    </button>
+
+    <form class="tree-picker-new-form" id="newFolderForm" style="display:none">
+      <input type="text" id="newFolderNameInput" placeholder="Folder name" autocomplete="off" spellcheck="false">
+      <button class="action-btn primary" type="submit">Add</button>
+    </form>
+
+    <div class="tree-picker-error" id="pickerError" style="display:none"></div>
+
+    <section class="tree-picker-list" id="folderList" aria-label="Choose a folder"></section>
+    <div class="tree-picker-empty" id="folderEmpty" style="display:none">
+      Create a folder first, then this page will be added there.
+    </div>
+  </main>
+
+  <script src="tree-picker.js"></script>
+</body>
+
+</html>

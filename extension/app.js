@@ -1,5 +1,5 @@
 /* ================================================================
-   Tab Out — Dashboard App (Pure Extension Edition)
+   Tab Hub — Dashboard App (Pure Extension Edition)
 
    This file is the brain of the dashboard. Now that the dashboard
    IS the extension page (not inside an iframe), it can call
@@ -26,15 +26,21 @@
 // All open tabs — populated by fetchOpenTabs()
 let openTabs = [];
 let favoriteDragId = null;
+let treeDragId = null;
+let treeDragType = null;
 let overflowChipSeq = 0;
 let dashboardRenderRun = 0;
+let currentView = 'dashboard';
+let tabTreeSearchQuery = '';
 const overflowChipCache = new Map();
+const TAB_OUT_STORE_KEY = 'tabOutStore';
+const TAB_OUT_STORE_VERSION = 1;
 
 /**
  * fetchOpenTabs()
  *
  * Reads all currently open browser tabs directly from Chrome.
- * Sets the extensionId flag so we can identify Tab Out's own pages.
+ * Sets the extensionId flag so we can identify Tab Hub's own pages.
  */
 async function fetchOpenTabs() {
   try {
@@ -49,7 +55,7 @@ async function fetchOpenTabs() {
       title:    t.title,
       windowId: t.windowId,
       active:   t.active,
-      // Flag Tab Out's own pages so we can detect duplicate new tabs
+      // Flag Tab Hub's own pages so we can detect duplicate new tabs
       isTabOut: t.url === newtabUrl || t.url === 'chrome://newtab/',
     }));
   } catch {
@@ -176,7 +182,7 @@ async function closeDuplicateTabs(urls, keepOne = true) {
 /**
  * closeTabOutDupes()
  *
- * Closes all duplicate Tab Out new-tab pages except the current one.
+ * Closes all duplicate Tab Hub new-tab pages except the current one.
  */
 async function closeTabOutDupes() {
   const extensionId = chrome.runtime.id;
@@ -190,7 +196,7 @@ async function closeTabOutDupes() {
 
   if (tabOutTabs.length <= 1) return;
 
-  // Keep the active Tab Out tab in the CURRENT window — that's the one the
+  // Keep the active Tab Hub tab in the CURRENT window — that's the one the
   // user is looking at right now. Falls back to any active one, then the first.
   const keep =
     tabOutTabs.find(t => t.active && t.windowId === currentWindow.id) ||
@@ -223,6 +229,121 @@ async function closeTabOutDupes() {
    ]
    ---------------------------------------------------------------- */
 
+function nowIso() {
+  return new Date().toISOString();
+}
+
+function createDefaultTabTree(createdAt = nowIso()) {
+  return {
+    schemaVersion: 2,
+    maxDepth: 2,
+    rootId: 'root',
+    nodes: {
+      root: {
+        id: 'root',
+        type: 'folder',
+        name: 'Tab Tree',
+        children: [],
+        expanded: true,
+        createdAt,
+        updatedAt: createdAt,
+      },
+    },
+  };
+}
+
+function createDefaultStore(legacy = {}) {
+  const createdAt = nowIso();
+  return {
+    schemaVersion: TAB_OUT_STORE_VERSION,
+    appVersion: chrome.runtime && chrome.runtime.getManifest ? chrome.runtime.getManifest().version : '1.0.0',
+    features: {
+      tabTree: { enabled: true },
+    },
+    data: {
+      dashboard: {
+        favorites: Array.isArray(legacy.favorites) ? legacy.favorites : [],
+        deferred: Array.isArray(legacy.deferred) ? legacy.deferred : [],
+      },
+      tabTree: createDefaultTabTree(createdAt),
+    },
+    meta: {
+      createdAt,
+      updatedAt: createdAt,
+    },
+  };
+}
+
+function normalizeStore(raw, legacy = {}) {
+  const fallback = createDefaultStore(legacy);
+  if (!raw || typeof raw !== 'object') return fallback;
+
+  const store = {
+    ...fallback,
+    ...raw,
+    features: {
+      ...fallback.features,
+      ...(raw.features && typeof raw.features === 'object' ? raw.features : {}),
+    },
+    data: {
+      ...fallback.data,
+      ...(raw.data && typeof raw.data === 'object' ? raw.data : {}),
+    },
+    meta: {
+      ...fallback.meta,
+      ...(raw.meta && typeof raw.meta === 'object' ? raw.meta : {}),
+    },
+  };
+
+  if (!store.features.tabTree || typeof store.features.tabTree !== 'object') {
+    store.features.tabTree = { enabled: true };
+  }
+  if (typeof store.features.tabTree.enabled !== 'boolean') {
+    store.features.tabTree.enabled = true;
+  }
+
+  const dashboard = store.data.dashboard && typeof store.data.dashboard === 'object' ? store.data.dashboard : {};
+  store.data.dashboard = {
+    favorites: Array.isArray(dashboard.favorites) ? dashboard.favorites : fallback.data.dashboard.favorites,
+    deferred: Array.isArray(dashboard.deferred) ? dashboard.deferred : fallback.data.dashboard.deferred,
+  };
+
+  store.data.tabTree = normalizeTabTree(store.data.tabTree);
+  store.schemaVersion = TAB_OUT_STORE_VERSION;
+  return store;
+}
+
+async function getTabOutStore() {
+  const data = await chrome.storage.local.get([TAB_OUT_STORE_KEY, 'favorites', 'deferred']);
+  const store = normalizeStore(data[TAB_OUT_STORE_KEY], {
+    favorites: data.favorites,
+    deferred: data.deferred,
+  });
+
+  if (!data[TAB_OUT_STORE_KEY]) {
+    await saveTabOutStore(store);
+  }
+
+  return store;
+}
+
+async function saveTabOutStore(store) {
+  const next = normalizeStore(store);
+  next.meta.updatedAt = nowIso();
+  await chrome.storage.local.set({ [TAB_OUT_STORE_KEY]: next });
+  return next;
+}
+
+async function updateTabOutStore(mutator) {
+  const store = await getTabOutStore();
+  await mutator(store);
+  return saveTabOutStore(store);
+}
+
+function getDashboardData(store) {
+  return store.data && store.data.dashboard ? store.data.dashboard : { favorites: [], deferred: [] };
+}
+
 /**
  * saveTabForLater(tab)
  *
@@ -230,16 +351,17 @@ async function closeTabOutDupes() {
  * @param {{ url: string, title: string }} tab
  */
 async function saveTabForLater(tab) {
-  const { deferred = [] } = await chrome.storage.local.get('deferred');
-  deferred.push({
-    id:        Date.now().toString(),
-    url:       tab.url,
-    title:     tab.title,
-    savedAt:   new Date().toISOString(),
-    completed: false,
-    dismissed: false,
+  await updateTabOutStore(store => {
+    const dashboard = getDashboardData(store);
+    dashboard.deferred.push({
+      id:        Date.now().toString(),
+      url:       tab.url,
+      title:     tab.title,
+      savedAt:   nowIso(),
+      completed: false,
+      dismissed: false,
+    });
   });
-  await chrome.storage.local.set({ deferred });
 }
 
 /**
@@ -250,7 +372,9 @@ async function saveTabForLater(tab) {
  * Splits into active (not completed) and archived (completed).
  */
 async function getSavedTabs() {
-  const { deferred = [] } = await chrome.storage.local.get('deferred');
+  const store = await getTabOutStore();
+  const dashboard = getDashboardData(store);
+  const deferred = Array.isArray(dashboard.deferred) ? dashboard.deferred : [];
   const visible = deferred.filter(t => !t.dismissed);
   return {
     active:   visible.filter(t => !t.completed),
@@ -264,13 +388,13 @@ async function getSavedTabs() {
  * Marks a saved tab as completed (checked off). It moves to the archive.
  */
 async function checkOffSavedTab(id) {
-  const { deferred = [] } = await chrome.storage.local.get('deferred');
-  const tab = deferred.find(t => t.id === id);
-  if (tab) {
-    tab.completed = true;
-    tab.completedAt = new Date().toISOString();
-    await chrome.storage.local.set({ deferred });
-  }
+  await updateTabOutStore(store => {
+    const tab = getDashboardData(store).deferred.find(t => t.id === id);
+    if (tab) {
+      tab.completed = true;
+      tab.completedAt = nowIso();
+    }
+  });
 }
 
 /**
@@ -279,12 +403,10 @@ async function checkOffSavedTab(id) {
  * Marks a saved tab as dismissed (removed from all lists).
  */
 async function dismissSavedTab(id) {
-  const { deferred = [] } = await chrome.storage.local.get('deferred');
-  const tab = deferred.find(t => t.id === id);
-  if (tab) {
-    tab.dismissed = true;
-    await chrome.storage.local.set({ deferred });
-  }
+  await updateTabOutStore(store => {
+    const tab = getDashboardData(store).deferred.find(t => t.id === id);
+    if (tab) tab.dismissed = true;
+  });
 }
 
 
@@ -303,7 +425,8 @@ function createFavoriteId() {
 }
 
 async function getFavorites() {
-  const { favorites = [] } = await chrome.storage.local.get('favorites');
+  const store = await getTabOutStore();
+  const { favorites = [] } = getDashboardData(store);
   if (!Array.isArray(favorites)) return [];
 
   return favorites
@@ -316,7 +439,9 @@ async function getFavorites() {
 }
 
 async function saveFavorites(favorites) {
-  await chrome.storage.local.set({ favorites });
+  await updateTabOutStore(store => {
+    getDashboardData(store).favorites = favorites;
+  });
 }
 
 function normalizeFavoriteUrl(input) {
@@ -391,6 +516,964 @@ async function moveFavorite(draggedId, targetId) {
   favorites.splice(toIndex, 0, moved);
   await saveFavorites(favorites);
   return true;
+}
+
+
+/* ----------------------------------------------------------------
+   TAB TREE — Data model, storage, URL handling
+   ---------------------------------------------------------------- */
+
+const TAB_TREE_ALLOWED_PROTOCOLS = ['http:', 'https:', 'chrome:', 'chrome-extension:', 'about:', 'file:'];
+
+function createTreeNodeId() {
+  if (globalThis.crypto && typeof globalThis.crypto.randomUUID === 'function') {
+    return 'node_' + globalThis.crypto.randomUUID();
+  }
+  return 'node_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+}
+
+function createUniqueTreeNodeId(nodes, preferredId) {
+  if (preferredId && preferredId !== 'root' && !nodes[preferredId]) return preferredId;
+  let id = createTreeNodeId();
+  while (nodes[id]) id = createTreeNodeId();
+  return id;
+}
+
+function normalizeTabTree(raw) {
+  const fallback = createDefaultTabTree();
+  if (!raw || typeof raw !== 'object' || !raw.nodes || typeof raw.nodes !== 'object') return fallback;
+
+  const rawNodes = {};
+  for (const [id, node] of Object.entries(raw.nodes)) {
+    if (!node || typeof node !== 'object') continue;
+    if (node.type === 'folder') {
+      rawNodes[id] = {
+        id,
+        type: 'folder',
+        name: String(node.name || (id === 'root' ? 'Tab Tree' : 'Untitled folder')),
+        children: Array.isArray(node.children) ? node.children.filter(childId => typeof childId === 'string') : [],
+        expanded: typeof node.expanded === 'boolean' ? node.expanded : true,
+        createdAt: node.createdAt || nowIso(),
+        updatedAt: node.updatedAt || node.createdAt || nowIso(),
+      };
+    } else if (node.type === 'tab') {
+      rawNodes[id] = {
+        id,
+        type: 'tab',
+        name: String(node.name || node.url || 'Untitled tab'),
+        url: String(node.url || ''),
+        createdAt: node.createdAt || nowIso(),
+        updatedAt: node.updatedAt || node.createdAt || nowIso(),
+      };
+    }
+  }
+
+  if (!rawNodes.root || rawNodes.root.type !== 'folder') return fallback;
+
+  const root = rawNodes.root;
+  const nodes = {
+    root: {
+      id: 'root',
+      type: 'folder',
+      name: root.name || 'Tab Tree',
+      children: [],
+      expanded: true,
+      createdAt: root.createdAt || nowIso(),
+      updatedAt: root.updatedAt || root.createdAt || nowIso(),
+    },
+  };
+  const visitedFolders = new Set(['root']);
+  const visitedTabs = new Set();
+  const rootTabIds = [];
+
+  function cloneTab(tabId) {
+    if (visitedTabs.has(tabId)) return null;
+    const tab = rawNodes[tabId];
+    if (!tab || tab.type !== 'tab') return null;
+    visitedTabs.add(tabId);
+    const nextId = createUniqueTreeNodeId(nodes, tabId);
+    nodes[nextId] = { ...tab, id: nextId };
+    return nextId;
+  }
+
+  function addFolderToRoot(folderId, pathParts) {
+    if (visitedFolders.has(folderId)) return null;
+    const folder = rawNodes[folderId];
+    if (!folder || folder.type !== 'folder') return null;
+    visitedFolders.add(folderId);
+
+    const nextId = createUniqueTreeNodeId(nodes, folderId);
+    const folderName = pathParts.filter(Boolean).join(' / ') || folder.name || 'Untitled folder';
+    const nextFolder = {
+      ...folder,
+      id: nextId,
+      name: folderName,
+      children: [],
+      expanded: typeof folder.expanded === 'boolean' ? folder.expanded : true,
+    };
+    nodes[nextId] = nextFolder;
+    nodes.root.children.push(nextId);
+
+    for (const childId of folder.children) {
+      const child = rawNodes[childId];
+      if (!child || childId === folderId) continue;
+      if (child.type === 'tab') {
+        const nextTabId = cloneTab(childId);
+        if (nextTabId) nextFolder.children.push(nextTabId);
+      } else if (child.type === 'folder') {
+        addFolderToRoot(childId, [...pathParts, child.name]);
+      }
+    }
+
+    return nextId;
+  }
+
+  for (const childId of root.children) {
+    const child = rawNodes[childId];
+    if (!child || childId === 'root') continue;
+    if (child.type === 'folder') {
+      addFolderToRoot(childId, [child.name]);
+    } else if (child.type === 'tab') {
+      rootTabIds.push(childId);
+    }
+  }
+
+  const rootTabChildren = rootTabIds.map(cloneTab).filter(Boolean);
+  if (rootTabChildren.length > 0) {
+    const timestamp = nowIso();
+    const unsortedId = createUniqueTreeNodeId(nodes, 'folder_unsorted');
+    nodes[unsortedId] = {
+      id: unsortedId,
+      type: 'folder',
+      name: 'Unsorted',
+      children: rootTabChildren,
+      expanded: true,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+    nodes.root.children.push(unsortedId);
+  }
+
+  for (const folderId of nodes.root.children) {
+    const folder = nodes[folderId];
+    if (folder && folder.type === 'folder') dedupeTreeFolderTabs({ nodes }, folder);
+  }
+
+  return {
+    schemaVersion: 2,
+    maxDepth: 2,
+    rootId: 'root',
+    nodes,
+  };
+}
+
+async function getTabTree() {
+  const store = await getTabOutStore();
+  return normalizeTabTree(store.data.tabTree);
+}
+
+async function saveTabTree(tree) {
+  await updateTabOutStore(store => {
+    store.data.tabTree = normalizeTabTree(tree);
+  });
+}
+
+async function isTabTreeEnabled() {
+  const store = await getTabOutStore();
+  return !!(store.features && store.features.tabTree && store.features.tabTree.enabled);
+}
+
+async function setTabTreeEnabled(enabled) {
+  await updateTabOutStore(store => {
+    store.features.tabTree = { ...(store.features.tabTree || {}), enabled: !!enabled };
+  });
+}
+
+function findTreeParent(tree, nodeId) {
+  for (const node of Object.values(tree.nodes)) {
+    if (node.type === 'folder' && node.children.includes(nodeId)) return node;
+  }
+  return null;
+}
+
+function isTreeRootId(nodeId) {
+  return nodeId === 'root';
+}
+
+async function addTreeFolder(parentId, name) {
+  const trimmed = (name || '').trim();
+  if (!trimmed) throw new Error('Enter a folder name');
+
+  const tree = await getTabTree();
+  if (!isTreeRootId(parentId)) throw new Error('Folders can only be created at the top level');
+  const parent = tree.nodes[parentId];
+  if (!parent || parent.type !== 'folder') throw new Error('Folder not found');
+
+  const id = createTreeNodeId();
+  const timestamp = nowIso();
+  tree.nodes[id] = {
+    id,
+    type: 'folder',
+    name: trimmed,
+    children: [],
+    expanded: true,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  };
+  parent.children.push(id);
+  parent.expanded = true;
+  parent.updatedAt = timestamp;
+  await saveTabTree(tree);
+}
+
+async function updateTreeFolder(nodeId, name) {
+  if (nodeId === 'root') throw new Error('Root folder cannot be renamed');
+  const trimmed = (name || '').trim();
+  if (!trimmed) throw new Error('Enter a folder name');
+
+  const tree = await getTabTree();
+  const node = tree.nodes[nodeId];
+  if (!node || node.type !== 'folder') throw new Error('Folder not found');
+  node.name = trimmed;
+  node.updatedAt = nowIso();
+  await saveTabTree(tree);
+}
+
+function normalizeTreeUrl(input) {
+  const trimmed = (input || '').trim();
+  if (!trimmed) throw new Error('Enter a URL');
+
+  const hasScheme = /^[a-z][a-z0-9+.-]*:/i.test(trimmed);
+  const candidate = hasScheme ? trimmed : `https://${trimmed}`;
+  let parsed;
+  try {
+    parsed = new URL(candidate);
+  } catch {
+    throw new Error('Enter a valid URL');
+  }
+
+  if (!TAB_TREE_ALLOWED_PROTOCOLS.includes(parsed.protocol)) {
+    throw new Error('That URL type is not supported');
+  }
+
+  return parsed.toString();
+}
+
+function getComparableTreeUrl(url) {
+  try { return normalizeTreeUrl(url); }
+  catch { return String(url || '').trim(); }
+}
+
+function findTabIdsInFolderByUrl(tree, folder, normalizedUrl) {
+  if (!folder || !Array.isArray(folder.children)) return [];
+  return folder.children.filter(childId => {
+    const node = tree.nodes[childId];
+    return node && node.type === 'tab' && getComparableTreeUrl(node.url) === normalizedUrl;
+  });
+}
+
+function dedupeTreeFolderTabs(tree, folder) {
+  if (!folder || !Array.isArray(folder.children)) return;
+  const latestIdByUrl = new Map();
+  for (const childId of folder.children) {
+    const node = tree.nodes[childId];
+    if (!node || node.type !== 'tab') continue;
+    const key = getComparableTreeUrl(node.url);
+    if (key) latestIdByUrl.set(key, childId);
+  }
+
+  const nextChildren = [];
+  for (const childId of folder.children) {
+    const node = tree.nodes[childId];
+    if (!node || node.type !== 'tab') continue;
+    const key = getComparableTreeUrl(node.url);
+    if (latestIdByUrl.get(key) !== childId) {
+      delete tree.nodes[childId];
+      continue;
+    }
+    nextChildren.push(childId);
+  }
+  folder.children = nextChildren;
+}
+
+function upsertTreeTabInFolder(tree, folderId, name, normalizedUrl, timestamp = nowIso()) {
+  const folder = tree.nodes[folderId];
+  if (!folder || folder.type !== 'folder') throw new Error('Folder not found');
+  if (isTreeRootId(folderId)) throw new Error('Choose a folder before adding a tab');
+
+  const trimmedName = (name || '').trim() || displayNameFromTreeUrl(normalizedUrl);
+  const existingIds = findTabIdsInFolderByUrl(tree, folder, normalizedUrl);
+  const existing = existingIds.length > 0 ? tree.nodes[existingIds[existingIds.length - 1]] : null;
+  if (existing) {
+    existing.name = trimmedName;
+    existing.url = normalizedUrl;
+    existing.updatedAt = timestamp;
+    folder.children = folder.children.filter(childId => {
+      if (childId === existing.id) return false;
+      if (existingIds.includes(childId)) {
+        delete tree.nodes[childId];
+        return false;
+      }
+      return true;
+    });
+    folder.children.push(existing.id);
+    folder.expanded = true;
+    folder.updatedAt = timestamp;
+    return existing;
+  }
+
+  const id = createTreeNodeId();
+  tree.nodes[id] = {
+    id,
+    type: 'tab',
+    name: trimmedName,
+    url: normalizedUrl,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  };
+  folder.children.push(id);
+  folder.expanded = true;
+  folder.updatedAt = timestamp;
+  return tree.nodes[id];
+}
+
+function getUrlProtocol(url) {
+  try { return new URL(url).protocol; }
+  catch { return ''; }
+}
+
+function displayNameFromTreeUrl(url) {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+      const domain = friendlyDomain(parsed.hostname) || parsed.hostname;
+      const path = parsed.pathname && parsed.pathname !== '/' ? parsed.pathname.replace(/\/$/, '') : '';
+      return path ? `${domain}${path}` : domain;
+    }
+    if (parsed.protocol === 'file:') {
+      const parts = decodeURIComponent(parsed.pathname).split('/').filter(Boolean);
+      return parts[parts.length - 1] || url;
+    }
+    return url;
+  } catch {
+    return url;
+  }
+}
+
+function isGenericFetchedTitle(title, url) {
+  const cleanTitleText = stripTitleNoise(title || '').trim();
+  if (!cleanTitleText) return true;
+
+  try {
+    const parsed = new URL(url);
+    if (!['http:', 'https:'].includes(parsed.protocol)) return false;
+
+    const path = parsed.pathname || '/';
+    const host = parsed.hostname.replace(/^www\./, '');
+    const friendly = friendlyDomain(parsed.hostname);
+    const titleLower = cleanTitleText.toLowerCase();
+    const genericProductTitles = [
+      'doc',
+      'docs',
+      'document',
+      'wiki',
+      'lark',
+      'lark docs',
+      'feishu',
+      '飞书',
+      '飞书文档',
+      '飞书云文档',
+      'loading',
+      'loading...',
+    ];
+    const genericNames = [
+      parsed.hostname,
+      host,
+      friendly,
+      host.replace(/\.(com|org|net|io|co|ai|dev|app|so|me|xyz|info|us|uk|co\.uk|co\.jp)$/, ''),
+    ].filter(Boolean).map(value => value.toLowerCase());
+
+    return path !== '/' && (
+      genericNames.includes(titleLower) ||
+      genericProductTitles.includes(titleLower)
+    );
+  } catch {
+    return false;
+  }
+}
+
+async function fetchTitleWithTemporaryTab(url) {
+  const protocol = getUrlProtocol(url);
+  if (!['http:', 'https:'].includes(protocol)) {
+    return { title: displayNameFromTreeUrl(url), url };
+  }
+  const isLikelyDocumentApp = (() => {
+    try {
+      const parsed = new URL(url);
+      return (
+        parsed.hostname.endsWith('larkoffice.com') ||
+        parsed.hostname.endsWith('feishu.cn') ||
+        parsed.pathname.startsWith('/wiki/') ||
+        parsed.pathname.startsWith('/docx/') ||
+        parsed.pathname.startsWith('/doc/')
+      );
+    } catch {
+      return false;
+    }
+  })();
+
+  let tempTab = null;
+  let listener = null;
+  let timeoutId = null;
+  let settleTimeoutId = null;
+  let pollIntervalId = null;
+
+  try {
+    tempTab = await chrome.tabs.create({ url, active: false });
+    const tabId = tempTab.id;
+
+    const result = await new Promise(resolve => {
+      let resolved = false;
+      let latestTitle = tempTab.title || '';
+      let latestUrl = tempTab.url || url;
+      let pageComplete = false;
+
+      const finish = async () => {
+        if (resolved) return;
+        resolved = true;
+        try {
+          const latest = await chrome.tabs.get(tabId);
+          const finalUrl = latest.url || latestUrl || url;
+          const finalTitle = stripTitleNoise(latest.title || latestTitle || '');
+          resolve({
+            title: finalTitle && !isGenericFetchedTitle(finalTitle, finalUrl)
+              ? finalTitle
+              : displayNameFromTreeUrl(finalUrl),
+            url: finalUrl,
+          });
+        } catch {
+          const fallbackTitle = stripTitleNoise(latestTitle || '');
+          const fallbackUrl = latestUrl || url;
+          resolve({
+            title: fallbackTitle && !isGenericFetchedTitle(fallbackTitle, fallbackUrl)
+              ? fallbackTitle
+              : displayNameFromTreeUrl(fallbackUrl),
+            url: fallbackUrl,
+          });
+        }
+      };
+
+      const scheduleFinish = (delay = 650) => {
+        if (settleTimeoutId) clearTimeout(settleTimeoutId);
+        settleTimeoutId = setTimeout(finish, delay);
+      };
+
+      const pollLatestTitle = async () => {
+        if (resolved) return;
+        try {
+          const latest = await chrome.tabs.get(tabId);
+          latestTitle = latest.title || latestTitle;
+          latestUrl = latest.url || latestUrl;
+          if (latest.status === 'complete') pageComplete = true;
+          if (
+            latestTitle &&
+            !isGenericFetchedTitle(latestTitle, latestUrl) &&
+            (!isLikelyDocumentApp || pageComplete)
+          ) {
+            scheduleFinish(isLikelyDocumentApp ? 900 : 650);
+          }
+        } catch {
+          // The tab may already be gone; the normal timeout path will settle.
+        }
+      };
+
+      listener = (updatedTabId, changeInfo, tabInfo) => {
+        if (updatedTabId !== tabId) return;
+        latestTitle = changeInfo.title || tabInfo.title || latestTitle;
+        latestUrl = tabInfo.url || latestUrl;
+
+        if (changeInfo.status === 'complete') {
+          pageComplete = true;
+          if (!isLikelyDocumentApp || !isGenericFetchedTitle(latestTitle, latestUrl)) {
+            scheduleFinish(isLikelyDocumentApp ? 900 : 650);
+          }
+          return;
+        }
+
+        if (
+          latestTitle &&
+          !isGenericFetchedTitle(latestTitle, latestUrl) &&
+          (!isLikelyDocumentApp || pageComplete)
+        ) {
+          scheduleFinish(isLikelyDocumentApp ? 1400 : 850);
+        }
+      };
+
+      chrome.tabs.onUpdated.addListener(listener);
+      if (isLikelyDocumentApp) {
+        pollIntervalId = setInterval(pollLatestTitle, 500);
+      }
+      timeoutId = setTimeout(finish, isLikelyDocumentApp ? 15000 : 4500);
+      if (tempTab.title && !isGenericFetchedTitle(tempTab.title, tempTab.url || url)) {
+        scheduleFinish(isLikelyDocumentApp ? 1400 : 850);
+      }
+    });
+
+    return result;
+  } catch (err) {
+    console.warn('[tab-out] Could not fetch page title:', err);
+    return { title: displayNameFromTreeUrl(url), url };
+  } finally {
+    if (listener) chrome.tabs.onUpdated.removeListener(listener);
+    if (timeoutId) clearTimeout(timeoutId);
+    if (settleTimeoutId) clearTimeout(settleTimeoutId);
+    if (pollIntervalId) clearInterval(pollIntervalId);
+    if (tempTab && tempTab.id) {
+      try { await chrome.tabs.remove(tempTab.id); }
+      catch (err) { console.warn('[tab-out] Could not close temporary title tab:', err); }
+    }
+  }
+}
+
+async function addTreeTab(parentId, name, url) {
+  const normalizedUrl = normalizeTreeUrl(url);
+  const tree = await getTabTree();
+  upsertTreeTabInFolder(tree, parentId, name, normalizedUrl);
+  await saveTabTree(tree);
+}
+
+async function updateTreeTab(nodeId, name, url) {
+  const normalizedUrl = normalizeTreeUrl(url);
+  const trimmedName = (name || '').trim() || displayNameFromTreeUrl(normalizedUrl);
+  const tree = await getTabTree();
+  const node = tree.nodes[nodeId];
+  if (!node || node.type !== 'tab') throw new Error('Tab not found');
+  node.name = trimmedName;
+  node.url = normalizedUrl;
+  node.updatedAt = nowIso();
+  await saveTabTree(tree);
+}
+
+function collectTreeSubtreeIds(tree, nodeId, ids = []) {
+  const node = tree.nodes[nodeId];
+  if (!node) return ids;
+  ids.push(nodeId);
+  if (node.type === 'folder') {
+    node.children.forEach(childId => collectTreeSubtreeIds(tree, childId, ids));
+  }
+  return ids;
+}
+
+async function deleteTreeNode(nodeId) {
+  if (nodeId === 'root') throw new Error('Root folder cannot be deleted');
+  const tree = await getTabTree();
+  const node = tree.nodes[nodeId];
+  if (!node) throw new Error('Node not found');
+  const parent = findTreeParent(tree, nodeId);
+  if (parent) parent.children = parent.children.filter(childId => childId !== nodeId);
+  const ids = collectTreeSubtreeIds(tree, nodeId);
+  ids.forEach(id => delete tree.nodes[id]);
+  await saveTabTree(tree);
+}
+
+async function toggleTreeFolder(nodeId) {
+  const tree = await getTabTree();
+  const node = tree.nodes[nodeId];
+  if (!node || node.type !== 'folder') return;
+  node.expanded = nodeId === 'root' ? true : !node.expanded;
+  node.updatedAt = nowIso();
+  await saveTabTree(tree);
+}
+
+async function moveTreeNode(draggedId, targetId, position = 'inside') {
+  if (!draggedId || draggedId === 'root' || draggedId === targetId) return false;
+  const tree = await getTabTree();
+  const dragged = tree.nodes[draggedId];
+  const target = tree.nodes[targetId];
+  if (!dragged || !target) return false;
+
+  const oldParent = findTreeParent(tree, draggedId);
+  if (!oldParent) return false;
+  const oldIndex = oldParent.children.indexOf(draggedId);
+
+  let newParent = null;
+  let insertIndex = -1;
+
+  if (dragged.type === 'folder') {
+    if (oldParent.id !== 'root') return false;
+    if (target.type !== 'folder' || targetId === 'root' || position === 'inside') return false;
+    newParent = tree.nodes.root;
+    insertIndex = newParent.children.indexOf(targetId);
+    if (insertIndex < 0) return false;
+    if (position === 'after') insertIndex += 1;
+  } else {
+    if (targetId === 'root') return false;
+    if (target.type === 'folder') {
+      if (position !== 'inside') return false;
+      newParent = target;
+      insertIndex = target.children.length;
+      target.expanded = true;
+    } else {
+      newParent = findTreeParent(tree, targetId);
+      if (!newParent || newParent.id === 'root') return false;
+      insertIndex = newParent.children.indexOf(targetId);
+      if (insertIndex < 0) return false;
+      if (position === 'after') insertIndex += 1;
+    }
+  }
+
+  oldParent.children = oldParent.children.filter(id => id !== draggedId);
+  if (oldParent.id === newParent.id) {
+    if (oldIndex >= 0 && oldIndex < insertIndex) insertIndex -= 1;
+    if (insertIndex > oldParent.children.length) insertIndex = oldParent.children.length;
+  }
+  newParent.children.splice(Math.max(0, insertIndex), 0, draggedId);
+  const timestamp = nowIso();
+  oldParent.updatedAt = timestamp;
+  newParent.updatedAt = timestamp;
+  dragged.updatedAt = timestamp;
+  await saveTabTree(tree);
+  return true;
+}
+
+function getTreeNodeIcon(node) {
+  if (node.type === 'folder') return node.expanded ? '▾' : '▸';
+  return '↗';
+}
+
+function treeNodeMatches(node, query) {
+  if (!query) return true;
+  const haystack = `${node.name || ''} ${node.url || ''}`.toLowerCase();
+  return haystack.includes(query);
+}
+
+function getVisibleTreeIds(tree, query) {
+  if (!query) return null;
+  const visible = new Set(['root']);
+
+  function visit(id, ancestors) {
+    const node = tree.nodes[id];
+    if (!node) return false;
+    const selfMatches = treeNodeMatches(node, query);
+    let childMatches = false;
+    if (node.type === 'folder') {
+      for (const childId of node.children) {
+        if (visit(childId, [...ancestors, id])) childMatches = true;
+      }
+    }
+    if (selfMatches || childMatches) {
+      ancestors.forEach(ancestorId => visible.add(ancestorId));
+      visible.add(id);
+      return true;
+    }
+    return false;
+  }
+
+  visit('root', []);
+  return visible;
+}
+
+function renderTreeNode(tree, nodeId, depth, query, visibleIds) {
+  const node = tree.nodes[nodeId];
+  if (!node || (visibleIds && !visibleIds.has(nodeId))) return '';
+
+  const isFolder = node.type === 'folder';
+  const rowClasses = ['tab-tree-row', isFolder ? 'folder' : 'tab'];
+
+  const safeId = escapeHtml(node.id);
+  const safeName = escapeHtml(node.name || '');
+  const safeUrl = escapeHtml(node.url || '');
+  const indent = Math.min(depth * 22, 220);
+  const showChildren = isFolder && (query || node.expanded);
+  const childHtml = showChildren
+    ? node.children.map(childId => renderTreeNode(tree, childId, depth + 1, query, visibleIds)).join('')
+    : '';
+
+  const addButton = isFolder
+    ? `<button class="tree-icon-btn" type="button" data-action="add-tree-child" data-parent-id="${safeId}" title="Add tab">+</button>`
+    : '';
+  const editAction = isFolder ? 'edit-tree-folder' : 'edit-tree-tab';
+  const editButton = `<button class="tree-icon-btn" type="button" data-action="${editAction}" data-node-id="${safeId}" title="Edit">✎</button>`;
+  const deleteButton = `<button class="tree-icon-btn danger" type="button" data-action="delete-tree-node" data-node-id="${safeId}" title="Delete">×</button>`;
+  const urlMeta = !isFolder && node.url ? `<span class="tree-url">${safeUrl}</span>` : '';
+  const titleAction = isFolder ? 'toggle-tree-folder' : 'open-tree-tab';
+
+  return `
+    <div class="tab-tree-node" data-node-id="${safeId}">
+      <div class="${rowClasses.join(' ')}" style="--tree-indent:${indent}px" draggable="true" data-node-id="${safeId}" data-node-type="${node.type}">
+        <button class="tree-toggle" type="button" data-action="${titleAction}" data-node-id="${safeId}" title="${isFolder ? 'Expand or collapse' : 'Open tab'}">${getTreeNodeIcon(node)}</button>
+        <button class="tree-title" type="button" data-action="${titleAction}" data-node-id="${safeId}" title="${safeUrl || safeName}">
+          <span>${safeName}</span>
+          ${urlMeta}
+        </button>
+        <div class="tree-row-actions">
+          ${addButton}
+          ${editButton}
+          ${deleteButton}
+        </div>
+      </div>
+      ${childHtml}
+    </div>`;
+}
+
+async function renderTabTree() {
+  const surface = document.getElementById('tabTreeSurface');
+  const disabled = document.getElementById('tabTreeDisabled');
+  const search = document.getElementById('tabTreeSearch');
+  if (!surface || !disabled) return;
+
+  const enabled = await isTabTreeEnabled();
+  if (!enabled) {
+    disabled.style.display = 'block';
+    surface.style.display = 'none';
+    return;
+  }
+
+  disabled.style.display = 'none';
+  surface.style.display = 'block';
+  if (search && search.value !== tabTreeSearchQuery) search.value = tabTreeSearchQuery;
+
+  const tree = await getTabTree();
+  const query = tabTreeSearchQuery.trim().toLowerCase();
+  const visibleIds = getVisibleTreeIds(tree, query);
+  const root = tree.nodes.root;
+  const rendered = root.children.map(childId => renderTreeNode(tree, childId, 0, query, visibleIds)).join('');
+  const empty = root.children.length === 0 && !query
+    ? `<div class="tab-tree-empty">
+        <div class="tab-tree-empty-title">Start with a folder.</div>
+        <div class="tab-tree-empty-subtitle">This tree is for links you want nearby, without making bookmarks feel official.</div>
+        <div class="tab-tree-empty-actions">
+          <button class="action-btn primary" type="button" data-action="add-tree-folder" data-parent-id="root">Add folder</button>
+        </div>
+      </div>`
+    : '';
+  const noResults = query && visibleIds.size <= 1
+    ? `<div class="tab-tree-empty"><div class="tab-tree-empty-title">No matching nodes.</div></div>`
+    : '';
+
+  surface.innerHTML = rendered + empty + noResults;
+}
+
+async function renderAppShell() {
+  const tabTreeEnabled = await isTabTreeEnabled();
+  const treeNav = document.getElementById('tabTreeNavButton');
+  if (treeNav) treeNav.style.display = tabTreeEnabled ? 'inline-flex' : 'none';
+
+  if (!tabTreeEnabled && currentView === 'tab-tree') {
+    await showDashboardView({ updateHash: true });
+    return;
+  }
+
+  document.querySelectorAll('.app-nav-item').forEach(btn => btn.classList.remove('active'));
+  const activeId = currentView === 'tab-tree' ? 'tabTreeNavButton' : 'dashboardNavButton';
+  const active = document.getElementById(activeId);
+  if (active) active.classList.add('active');
+}
+
+async function showDashboardView(options = {}) {
+  currentView = 'dashboard';
+  const dashboard = document.getElementById('dashboardView');
+  const tabTree = document.getElementById('tabTreeView');
+  if (dashboard) dashboard.style.display = 'block';
+  if (tabTree) tabTree.style.display = 'none';
+  if (options.updateHash !== false) history.replaceState(null, '', location.pathname);
+  await renderAppShell();
+  await renderDashboard();
+}
+
+async function showTabTreeView(options = {}) {
+  if (!await isTabTreeEnabled()) {
+    showToast('Tab Tree is turned off');
+    await showDashboardView({ updateHash: true });
+    return;
+  }
+  currentView = 'tab-tree';
+  const dashboard = document.getElementById('dashboardView');
+  const tabTree = document.getElementById('tabTreeView');
+  if (dashboard) dashboard.style.display = 'none';
+  if (tabTree) tabTree.style.display = 'block';
+  if (options.updateHash !== false) history.replaceState(null, '', '#tab-tree');
+  await renderAppShell();
+  await renderTabTree();
+}
+
+async function initializeApp() {
+  renderDashboardChrome();
+  if (location.hash === '#tab-tree' && await isTabTreeEnabled()) {
+    await showTabTreeView({ updateHash: false });
+    return;
+  }
+  await showDashboardView({ updateHash: false });
+}
+
+function setTreeTabError(message) {
+  const errorEl = document.getElementById('treeTabError');
+  if (!errorEl) return;
+  errorEl.textContent = message || '';
+  errorEl.style.display = message ? 'block' : 'none';
+}
+
+function updateTreeNodeModalUi() {
+  const nameGroup = document.getElementById('treeTabNameGroup');
+  const nameLabel = document.getElementById('treeTabNameLabel');
+  const urlGroup = document.getElementById('treeTabUrlGroup');
+  const submit = document.getElementById('treeTabSubmitButton');
+  const title = document.getElementById('treeTabModalTitle');
+  const modeInput = document.getElementById('treeTabModeInput');
+  const typeInput = document.getElementById('treeNodeTypeInput');
+  const mode = modeInput ? modeInput.value : 'add';
+  const type = typeInput && typeInput.value === 'folder' ? 'folder' : 'tab';
+  const isEdit = mode === 'edit';
+  const isTab = type === 'tab';
+
+  if (urlGroup) urlGroup.style.display = isTab ? 'block' : 'none';
+  if (nameGroup) nameGroup.style.display = (!isTab || mode !== 'add') ? 'block' : 'none';
+  if (nameLabel) nameLabel.textContent = isTab ? 'Name' : 'Folder name';
+  if (submit) submit.textContent = isTab && mode === 'add' ? 'Continue' : 'Save';
+  if (title) {
+    if (isEdit) title.textContent = isTab ? 'Edit tab' : 'Edit folder';
+    else title.textContent = isTab ? 'Add tab' : 'Add folder';
+  }
+}
+
+function openTreeNodeModal(mode, parentId, node = null, type = 'tab') {
+  const modal = document.getElementById('treeTabModal');
+  const modeInput = document.getElementById('treeTabModeInput');
+  const typeInput = document.getElementById('treeNodeTypeInput');
+  const parentInput = document.getElementById('treeTabParentInput');
+  const nodeInput = document.getElementById('treeTabNodeInput');
+  const urlInput = document.getElementById('treeTabUrlInput');
+  const nameInput = document.getElementById('treeTabNameInput');
+  if (!modal || !modeInput || !typeInput || !parentInput || !nodeInput || !urlInput || !nameInput) return;
+
+  let nodeType = node ? node.type : type;
+  if (!node && mode !== 'edit') {
+    nodeType = parentId === 'root' ? 'folder' : 'tab';
+  }
+  modeInput.value = mode === 'edit' ? 'edit' : 'add';
+  typeInput.value = nodeType === 'folder' ? 'folder' : 'tab';
+  parentInput.value = parentId || 'root';
+  nodeInput.value = node && node.id ? node.id : '';
+  urlInput.value = node && node.url ? node.url : '';
+  nameInput.value = node && node.name ? node.name : '';
+  nameInput.placeholder = nodeType === 'folder' ? 'Research' : 'Page title';
+  updateTreeNodeModalUi();
+  setTreeTabError('');
+  modal.style.display = 'flex';
+  setTimeout(() => {
+    const focusEl = nodeType === 'folder' ? nameInput : urlInput;
+    focusEl.focus();
+    focusEl.select();
+  }, 0);
+}
+
+function openTreeTabModal(mode, parentId, node = null) {
+  openTreeNodeModal(mode, parentId, node, 'tab');
+}
+
+function openTreeFolderModal(mode, parentId, node = null) {
+  openTreeNodeModal(mode, parentId, node, 'folder');
+}
+
+function closeTreeTabModal() {
+  const modal = document.getElementById('treeTabModal');
+  const form = document.getElementById('treeTabForm');
+  if (!modal || !form) return;
+  modal.style.display = 'none';
+  form.reset();
+  const modeInput = document.getElementById('treeTabModeInput');
+  const typeInput = document.getElementById('treeNodeTypeInput');
+  if (modeInput) modeInput.value = 'add';
+  if (typeInput) typeInput.value = 'tab';
+  updateTreeNodeModalUi();
+  setTreeTabError('');
+}
+
+async function prepareTreeTabConfirmation() {
+  const modeInput = document.getElementById('treeTabModeInput');
+  const urlInput = document.getElementById('treeTabUrlInput');
+  const nameInput = document.getElementById('treeTabNameInput');
+  const submit = document.getElementById('treeTabSubmitButton');
+  if (!modeInput || !urlInput || !nameInput || !submit) return;
+
+  let normalizedUrl;
+  try {
+    normalizedUrl = normalizeTreeUrl(urlInput.value);
+  } catch (err) {
+    setTreeTabError(err.message || 'Enter a valid URL');
+    return;
+  }
+
+  setTreeTabError('');
+  submit.disabled = true;
+  submit.textContent = 'Fetching title...';
+
+  const result = await fetchTitleWithTemporaryTab(normalizedUrl);
+  urlInput.value = result.url || normalizedUrl;
+  nameInput.value = result.title || displayNameFromTreeUrl(result.url || normalizedUrl);
+  modeInput.value = 'confirm';
+  updateTreeNodeModalUi();
+  submit.disabled = false;
+  setTimeout(() => {
+    nameInput.focus();
+    nameInput.select();
+  }, 0);
+}
+
+async function saveTreeTabFromModal() {
+  const modeInput = document.getElementById('treeTabModeInput');
+  const parentInput = document.getElementById('treeTabParentInput');
+  const nodeInput = document.getElementById('treeTabNodeInput');
+  const urlInput = document.getElementById('treeTabUrlInput');
+  const nameInput = document.getElementById('treeTabNameInput');
+  if (!modeInput || !parentInput || !nodeInput || !urlInput || !nameInput) return;
+
+  try {
+    if (modeInput.value === 'edit') {
+      await updateTreeTab(nodeInput.value, nameInput.value, urlInput.value);
+      showToast('Tab updated');
+    } else {
+      await addTreeTab(parentInput.value || 'root', nameInput.value, urlInput.value);
+      showToast('Tab added');
+    }
+    closeTreeTabModal();
+    await renderTabTree();
+  } catch (err) {
+    setTreeTabError(err && err.message ? err.message : 'Could not save tab');
+  }
+}
+
+async function saveTreeFolderFromModal() {
+  const modeInput = document.getElementById('treeTabModeInput');
+  const parentInput = document.getElementById('treeTabParentInput');
+  const nodeInput = document.getElementById('treeTabNodeInput');
+  const nameInput = document.getElementById('treeTabNameInput');
+  if (!modeInput || !parentInput || !nodeInput || !nameInput) return;
+
+  try {
+    if (modeInput.value === 'edit') {
+      await updateTreeFolder(nodeInput.value, nameInput.value);
+      showToast('Folder updated');
+    } else {
+      await addTreeFolder(parentInput.value || 'root', nameInput.value);
+      showToast('Folder added');
+    }
+    closeTreeTabModal();
+    await renderTabTree();
+  } catch (err) {
+    setTreeTabError(err && err.message ? err.message : 'Could not save folder');
+  }
+}
+
+async function openTreeTab(url) {
+  try {
+    await chrome.tabs.create({ url });
+  } catch (err) {
+    console.warn('[tab-out] Chrome blocked opening URL:', err);
+    showToast('Chrome blocked opening this URL');
+    try { await navigator.clipboard.writeText(url); showToast('URL copied'); }
+    catch {}
+  }
 }
 
 function scheduleAfterPaint(callback) {
@@ -895,7 +1978,7 @@ function getRealTabs() {
 /**
  * checkTabOutDupes()
  *
- * Counts how many Tab Out pages are open. If more than 1,
+ * Counts how many Tab Hub pages are open. If more than 1,
  * shows a banner offering to close the extras.
  */
 function checkTabOutDupes() {
@@ -1412,7 +2495,7 @@ async function renderMainDashboard(runId) {
   const statTabs = document.getElementById('statTabs');
   if (statTabs) statTabs.textContent = openTabs.length;
 
-  // --- Check for duplicate Tab Out tabs ---
+  // --- Check for duplicate Tab Hub tabs ---
   checkTabOutDupes();
 
   // --- Render "Saved for Later" column after the main tabs paint ---
@@ -1448,6 +2531,124 @@ document.addEventListener('click', async (e) => {
   if (!actionEl) return;
 
   const action = actionEl.dataset.action;
+
+  if (action === 'show-dashboard') {
+    await showDashboardView();
+    return;
+  }
+
+  if (action === 'show-tab-tree') {
+    await showTabTreeView();
+    return;
+  }
+
+  if (action === 'open-settings-modal') {
+    const modal = document.getElementById('settingsModal');
+    const input = document.getElementById('tabTreeEnabledInput');
+    if (input) input.checked = await isTabTreeEnabled();
+    if (modal) modal.style.display = 'flex';
+    return;
+  }
+
+  if (action === 'close-settings-modal') {
+    const modal = document.getElementById('settingsModal');
+    if (modal) modal.style.display = 'none';
+    return;
+  }
+
+  if (action === 'save-settings') {
+    const input = document.getElementById('tabTreeEnabledInput');
+    await setTabTreeEnabled(!!(input && input.checked));
+    const modal = document.getElementById('settingsModal');
+    if (modal) modal.style.display = 'none';
+    await renderAppShell();
+    if (currentView === 'tab-tree' && !(input && input.checked)) await showDashboardView();
+    else if (currentView === 'tab-tree') await renderTabTree();
+    showToast('Settings saved');
+    return;
+  }
+
+  if (action === 'enable-tab-tree') {
+    await setTabTreeEnabled(true);
+    await showTabTreeView();
+    showToast('Tab Tree enabled');
+    return;
+  }
+
+  if (action === 'add-tree-child') {
+    const parentId = actionEl.dataset.parentId || 'root';
+    openTreeNodeModal('add', parentId, null, parentId === 'root' ? 'folder' : 'tab');
+    return;
+  }
+
+  if (action === 'add-tree-folder') {
+    openTreeNodeModal('add', actionEl.dataset.parentId || 'root', null, 'folder');
+    return;
+  }
+
+  if (action === 'add-tree-tab') {
+    const parentId = actionEl.dataset.parentId || 'root';
+    if (parentId === 'root') {
+      showToast('Create a folder first');
+      return;
+    }
+    openTreeNodeModal('add', parentId, null, 'tab');
+    return;
+  }
+
+  if (action === 'close-tree-tab-modal') {
+    closeTreeTabModal();
+    return;
+  }
+
+  if (action === 'toggle-tree-folder') {
+    await toggleTreeFolder(actionEl.dataset.nodeId);
+    await renderTabTree();
+    return;
+  }
+
+  if (action === 'open-tree-tab') {
+    const tree = await getTabTree();
+    const node = tree.nodes[actionEl.dataset.nodeId];
+    if (node && node.type === 'tab') await openTreeTab(node.url);
+    return;
+  }
+
+  if (action === 'edit-tree-folder') {
+    const tree = await getTabTree();
+    const node = tree.nodes[actionEl.dataset.nodeId];
+    if (node && node.type === 'folder') openTreeFolderModal('edit', '', node);
+    return;
+  }
+
+  if (action === 'edit-tree-tab') {
+    const tree = await getTabTree();
+    const node = tree.nodes[actionEl.dataset.nodeId];
+    if (node && node.type === 'tab') openTreeTabModal('edit', '', node);
+    return;
+  }
+
+  if (action === 'delete-tree-node') {
+    const nodeId = actionEl.dataset.nodeId;
+    const tree = await getTabTree();
+    const node = tree.nodes[nodeId];
+    if (!node || nodeId === 'root') return;
+
+    const ok = node.type === 'folder'
+      ? window.confirm(`Delete "${node.name}" and all of its tabs?`)
+      : window.confirm(`Delete "${node.name}"?`);
+    if (!ok) return;
+
+    try {
+      await deleteTreeNode(nodeId);
+      await renderTabTree();
+      showToast(node.type === 'folder' ? 'Folder deleted' : 'Tab deleted');
+    } catch (err) {
+      console.warn('[tab-out] Failed to delete tree node:', err);
+      showToast('Could not delete node');
+    }
+    return;
+  }
 
   if (action === 'open-favorite-modal') {
     openFavoriteModal('add');
@@ -1490,7 +2691,7 @@ document.addEventListener('click', async (e) => {
     return;
   }
 
-  // ---- Close duplicate Tab Out tabs ----
+  // ---- Close duplicate Tab Hub tabs ----
   if (action === 'close-tabout-dupes') {
     await closeTabOutDupes();
     playCloseSound();
@@ -1500,7 +2701,7 @@ document.addEventListener('click', async (e) => {
       banner.style.opacity = '0';
       setTimeout(() => { banner.style.display = 'none'; banner.style.opacity = '1'; }, 400);
     }
-    showToast('Closed extra Tab Out tabs');
+    showToast('Closed extra Tab Hub tabs');
     return;
   }
 
@@ -1759,6 +2960,12 @@ document.addEventListener('click', (e) => {
 
 // ---- Archive search — filter archived items as user types ----
 document.addEventListener('input', async (e) => {
+  if (e.target.id === 'tabTreeSearch') {
+    tabTreeSearchQuery = e.target.value.trim().toLowerCase();
+    await renderTabTree();
+    return;
+  }
+
   if (e.target.id !== 'archiveSearch') return;
 
   const q = e.target.value.trim().toLowerCase();
@@ -1788,6 +2995,26 @@ document.addEventListener('input', async (e) => {
 });
 
 document.addEventListener('submit', async (e) => {
+  if (e.target.id === 'treeTabForm') {
+    e.preventDefault();
+    const modeInput = document.getElementById('treeTabModeInput');
+    const typeInput = document.getElementById('treeNodeTypeInput');
+    if (!modeInput || !typeInput) return;
+
+    if (typeInput.value === 'folder') {
+      await saveTreeFolderFromModal();
+      return;
+    }
+
+    if (modeInput.value === 'add') {
+      await prepareTreeTabConfirmation();
+      return;
+    }
+
+    await saveTreeTabFromModal();
+    return;
+  }
+
   if (e.target.id !== 'favoriteForm') return;
   e.preventDefault();
 
@@ -1815,15 +3042,33 @@ document.addEventListener('submit', async (e) => {
 
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
-  const modal = document.getElementById('favoriteModal');
-  if (modal && modal.style.display !== 'none') closeFavoriteModal();
+  const favoriteModal = document.getElementById('favoriteModal');
+  const settingsModal = document.getElementById('settingsModal');
+  const tabModal = document.getElementById('treeTabModal');
+  if (favoriteModal && favoriteModal.style.display !== 'none') closeFavoriteModal();
+  if (settingsModal && settingsModal.style.display !== 'none') settingsModal.style.display = 'none';
+  if (tabModal && tabModal.style.display !== 'none') closeTreeTabModal();
 });
 
 document.addEventListener('click', (e) => {
   if (e.target && e.target.id === 'favoriteModal') closeFavoriteModal();
+  if (e.target && e.target.id === 'settingsModal') e.target.style.display = 'none';
+  if (e.target && e.target.id === 'treeTabModal') closeTreeTabModal();
 });
 
 document.addEventListener('dragstart', (e) => {
+  const treeRow = e.target.closest('.tab-tree-row');
+  if (treeRow && treeRow.getAttribute('draggable') === 'true') {
+    treeDragId = treeRow.dataset.nodeId || null;
+    treeDragType = treeRow.dataset.nodeType || null;
+    treeRow.classList.add('dragging');
+    if (e.dataTransfer) {
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', treeDragId || '');
+    }
+    return;
+  }
+
   const item = e.target.closest('.favorite-item');
   if (!item) return;
 
@@ -1836,6 +3081,33 @@ document.addEventListener('dragstart', (e) => {
 });
 
 document.addEventListener('dragover', (e) => {
+  const treeRow = e.target.closest('.tab-tree-row');
+  if (treeRow && treeDragId && treeRow.dataset.nodeId !== treeDragId) {
+    document.querySelectorAll('.tab-tree-row.drop-before, .tab-tree-row.drop-after, .tab-tree-row.drop-inside').forEach(el => {
+      if (el !== treeRow) el.classList.remove('drop-before', 'drop-after', 'drop-inside');
+    });
+
+    const targetType = treeRow.dataset.nodeType || null;
+    if (treeDragType === 'folder' && targetType !== 'folder') return;
+    if (treeDragType === 'tab' && targetType !== 'folder' && targetType !== 'tab') return;
+
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+
+    const rect = treeRow.getBoundingClientRect();
+    const y = e.clientY - rect.top;
+    let position = 'inside';
+    if (treeDragType === 'folder') {
+      position = y < rect.height * 0.5 ? 'before' : 'after';
+    } else if (targetType === 'tab') {
+      position = y < rect.height * 0.5 ? 'before' : 'after';
+    }
+    treeRow.dataset.dropPosition = position;
+    treeRow.classList.remove('drop-before', 'drop-after', 'drop-inside');
+    treeRow.classList.add(`drop-${position}`);
+    return;
+  }
+
   const item = e.target.closest('.favorite-item');
   if (!item || !favoriteDragId || item.dataset.favoriteId === favoriteDragId) return;
 
@@ -1848,6 +3120,12 @@ document.addEventListener('dragover', (e) => {
 });
 
 document.addEventListener('dragleave', (e) => {
+  const treeRow = e.target.closest('.tab-tree-row');
+  if (treeRow) {
+    const related = e.relatedTarget && e.relatedTarget.closest ? e.relatedTarget.closest('.tab-tree-row') : null;
+    if (related !== treeRow) treeRow.classList.remove('drop-before', 'drop-after', 'drop-inside');
+  }
+
   const item = e.target.closest('.favorite-item');
   if (!item) return;
   const related = e.relatedTarget && e.relatedTarget.closest ? e.relatedTarget.closest('.favorite-item') : null;
@@ -1855,6 +3133,13 @@ document.addEventListener('dragleave', (e) => {
 });
 
 document.addEventListener('dragend', () => {
+  treeDragId = null;
+  treeDragType = null;
+  document.querySelectorAll('.tab-tree-row').forEach(row => {
+    row.classList.remove('dragging', 'drop-before', 'drop-after', 'drop-inside');
+    delete row.dataset.dropPosition;
+  });
+
   favoriteDragId = null;
   document.querySelectorAll('.favorite-item').forEach(item => {
     item.classList.remove('dragging', 'drag-over');
@@ -1862,6 +3147,27 @@ document.addEventListener('dragend', () => {
 });
 
 document.addEventListener('drop', async (e) => {
+  const treeRow = e.target.closest('.tab-tree-row');
+  if (treeRow && treeDragId) {
+    e.preventDefault();
+    const targetId = treeRow.dataset.nodeId;
+    const position = treeRow.dataset.dropPosition || 'inside';
+    const moved = await moveTreeNode(treeDragId, targetId, position);
+    treeDragId = null;
+    treeDragType = null;
+    document.querySelectorAll('.tab-tree-row').forEach(row => {
+      row.classList.remove('dragging', 'drop-before', 'drop-after', 'drop-inside');
+      delete row.dataset.dropPosition;
+    });
+    if (!moved) {
+      showToast('Cannot move there');
+      return;
+    }
+    await renderTabTree();
+    showToast('Node moved');
+    return;
+  }
+
   const item = e.target.closest('.favorite-item');
   if (!item || !favoriteDragId) return;
 
@@ -1880,4 +3186,4 @@ document.addEventListener('drop', async (e) => {
 /* ----------------------------------------------------------------
    INITIALIZE
    ---------------------------------------------------------------- */
-renderDashboard();
+initializeApp();

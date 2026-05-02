@@ -1,0 +1,201 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="430" viewBox="0 0 900 430">
+    <rect width="900" height="430" fill="#f8f5f0"/>
+    <text x="34" y="30" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="15" font-weight="700" fill="#1a1613">Tab Hub icon options</text>
+    
+      <g transform="translate(34 48)">
+        <rect x="-14" y="-14" width="184" height="330" rx="18" fill="#fffdf9" stroke="#e8e2da"/>
+        <g transform="translate(14 0)">
+      <rect x="5" y="5" width="118" height="118" rx="25" fill="#1a1613"/>
+      <path d="M25 30H51C58 30 61 36 64 41H98C104 41 109 46 109 52V92C109 99 104 104 97 104H31C24 104 19 99 19 92V36C19 33 22 30 25 30Z" fill="#3f6f91" opacity="0.55"/>
+      <path d="M28 24H56C63 24 66 30 69 36H102C108 36 113 41 113 47V89C113 96 108 101 101 101H29C22 101 17 96 17 89V30C17 27 21 24 28 24Z" fill="#3d7a4a" opacity="0.7"/>
+      <path d="M22 38H51C59 38 62 44 65 50H100C107 50 112 55 112 62V96C112 103 107 108 100 108H28C21 108 16 103 16 96V44C16 41 19 38 22 38Z" fill="#fffdf9"/>
+      <path d="M22 38H51C59 38 62 44 65 50H100C107 50 112 55 112 62V96C112 103 107 108 100 108H28C21 108 16 103 16 96V44C16 41 19 38 22 38Z" fill="none" stroke="#1a1613" stroke-width="6" stroke-linejoin="round"/>
+      <path d="M32 66H83" stroke="#1a1613" stroke-width="8" stroke-linecap="round"/>
+      <path d="M32 84H68" stroke="#c8713a" stroke-width="8" stroke-linecap="round"/>
+    </g>
+        <text x="78" y="166" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="18" font-weight="700" fill="#1a1613">A. Stacked Tabs</text>
+        <text x="78" y="191" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="11" fill="#6f6862">Many open tabs</text><text x="78" y="207" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="11" fill="#6f6862">gathered together.</text>
+        <g transform="translate(9 232)">
+          <g transform="scale(0.375)">
+      <rect x="5" y="5" width="118" height="118" rx="25" fill="#1a1613"/>
+      <path d="M25 30H51C58 30 61 36 64 41H98C104 41 109 46 109 52V92C109 99 104 104 97 104H31C24 104 19 99 19 92V36C19 33 22 30 25 30Z" fill="#3f6f91" opacity="0.55"/>
+      <path d="M28 24H56C63 24 66 30 69 36H102C108 36 113 41 113 47V89C113 96 108 101 101 101H29C22 101 17 96 17 89V30C17 27 21 24 28 24Z" fill="#3d7a4a" opacity="0.7"/>
+      <path d="M22 38H51C59 38 62 44 65 50H100C107 50 112 55 112 62V96C112 103 107 108 100 108H28C21 108 16 103 16 96V44C16 41 19 38 22 38Z" fill="#fffdf9"/>
+      <path d="M22 38H51C59 38 62 44 65 50H100C107 50 112 55 112 62V96C112 103 107 108 100 108H28C21 108 16 103 16 96V44C16 41 19 38 22 38Z" fill="none" stroke="#1a1613" stroke-width="6" stroke-linejoin="round"/>
+      <path d="M32 66H83" stroke="#1a1613" stroke-width="8" stroke-linecap="round"/>
+      <path d="M32 84H68" stroke="#c8713a" stroke-width="8" stroke-linecap="round"/>
+    </g>
+          <g transform="translate(58 8) scale(0.25)">
+      <rect x="5" y="5" width="118" height="118" rx="25" fill="#1a1613"/>
+      <path d="M25 30H51C58 30 61 36 64 41H98C104 41 109 46 109 52V92C109 99 104 104 97 104H31C24 104 19 99 19 92V36C19 33 22 30 25 30Z" fill="#3f6f91" opacity="0.55"/>
+      <path d="M28 24H56C63 24 66 30 69 36H102C108 36 113 41 113 47V89C113 96 108 101 101 101H29C22 101 17 96 17 89V30C17 27 21 24 28 24Z" fill="#3d7a4a" opacity="0.7"/>
+      <path d="M22 38H51C59 38 62 44 65 50H100C107 50 112 55 112 62V96C112 103 107 108 100 108H28C21 108 16 103 16 96V44C16 41 19 38 22 38Z" fill="#fffdf9"/>
+      <path d="M22 38H51C59 38 62 44 65 50H100C107 50 112 55 112 62V96C112 103 107 108 100 108H28C21 108 16 103 16 96V44C16 41 19 38 22 38Z" fill="none" stroke="#1a1613" stroke-width="6" stroke-linejoin="round"/>
+      <path d="M32 66H83" stroke="#1a1613" stroke-width="8" stroke-linecap="round"/>
+      <path d="M32 84H68" stroke="#c8713a" stroke-width="8" stroke-linecap="round"/>
+    </g>
+          <g transform="translate(105 16) scale(0.125)">
+      <rect x="5" y="5" width="118" height="118" rx="25" fill="#1a1613"/>
+      <path d="M25 30H51C58 30 61 36 64 41H98C104 41 109 46 109 52V92C109 99 104 104 97 104H31C24 104 19 99 19 92V36C19 33 22 30 25 30Z" fill="#3f6f91" opacity="0.55"/>
+      <path d="M28 24H56C63 24 66 30 69 36H102C108 36 113 41 113 47V89C113 96 108 101 101 101H29C22 101 17 96 17 89V30C17 27 21 24 28 24Z" fill="#3d7a4a" opacity="0.7"/>
+      <path d="M22 38H51C59 38 62 44 65 50H100C107 50 112 55 112 62V96C112 103 107 108 100 108H28C21 108 16 103 16 96V44C16 41 19 38 22 38Z" fill="#fffdf9"/>
+      <path d="M22 38H51C59 38 62 44 65 50H100C107 50 112 55 112 62V96C112 103 107 108 100 108H28C21 108 16 103 16 96V44C16 41 19 38 22 38Z" fill="none" stroke="#1a1613" stroke-width="6" stroke-linejoin="round"/>
+      <path d="M32 66H83" stroke="#1a1613" stroke-width="8" stroke-linecap="round"/>
+      <path d="M32 84H68" stroke="#c8713a" stroke-width="8" stroke-linecap="round"/>
+    </g>
+        </g>
+        <text x="78" y="304" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="11" fill="#9a918a">128 / 48 / 32 / 16 generated</text>
+      </g>
+    
+      <g transform="translate(248 48)">
+        <rect x="-14" y="-14" width="184" height="330" rx="18" fill="#fffdf9" stroke="#e8e2da"/>
+        <g transform="translate(14 0)">
+      <rect x="5" y="5" width="118" height="118" rx="25" fill="#fffdf9"/>
+      <rect x="5" y="5" width="118" height="118" rx="25" fill="none" stroke="#1a1613" stroke-width="7"/>
+      <path d="M39 42V86M39 64H57M39 42H57M39 86H57" stroke="#1a1613" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="39" cy="42" r="10" fill="#c8713a" stroke="#1a1613" stroke-width="5"/>
+      <circle cx="39" cy="64" r="8" fill="#3d7a4a" stroke="#1a1613" stroke-width="5"/>
+      <circle cx="39" cy="86" r="8" fill="#3f6f91" stroke="#1a1613" stroke-width="5"/>
+      <path d="M62 30H82C87 30 90 34 92 39H99C105 39 109 43 109 49V56C109 62 105 66 99 66H67C61 66 57 62 57 56V35C57 32 59 30 62 30Z" fill="#f8f5f0" stroke="#1a1613" stroke-width="5" stroke-linejoin="round"/>
+      <path d="M62 76H82C87 76 90 80 92 85H99C105 85 109 89 109 95V101C109 107 105 111 99 111H67C61 111 57 107 57 101V81C57 78 59 76 62 76Z" fill="#f8f5f0" stroke="#1a1613" stroke-width="5" stroke-linejoin="round"/>
+      <path d="M70 51H94M70 96H94" stroke="#1a1613" stroke-width="5" stroke-linecap="round"/>
+    </g>
+        <text x="78" y="166" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="18" font-weight="700" fill="#1a1613">B. Tab Tree</text>
+        <text x="78" y="191" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="11" fill="#6f6862">Folders and links</text><text x="78" y="207" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="11" fill="#6f6862">as a lightweight tree.</text>
+        <g transform="translate(9 232)">
+          <g transform="scale(0.375)">
+      <rect x="5" y="5" width="118" height="118" rx="25" fill="#fffdf9"/>
+      <rect x="5" y="5" width="118" height="118" rx="25" fill="none" stroke="#1a1613" stroke-width="7"/>
+      <path d="M39 42V86M39 64H57M39 42H57M39 86H57" stroke="#1a1613" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="39" cy="42" r="10" fill="#c8713a" stroke="#1a1613" stroke-width="5"/>
+      <circle cx="39" cy="64" r="8" fill="#3d7a4a" stroke="#1a1613" stroke-width="5"/>
+      <circle cx="39" cy="86" r="8" fill="#3f6f91" stroke="#1a1613" stroke-width="5"/>
+      <path d="M62 30H82C87 30 90 34 92 39H99C105 39 109 43 109 49V56C109 62 105 66 99 66H67C61 66 57 62 57 56V35C57 32 59 30 62 30Z" fill="#f8f5f0" stroke="#1a1613" stroke-width="5" stroke-linejoin="round"/>
+      <path d="M62 76H82C87 76 90 80 92 85H99C105 85 109 89 109 95V101C109 107 105 111 99 111H67C61 111 57 107 57 101V81C57 78 59 76 62 76Z" fill="#f8f5f0" stroke="#1a1613" stroke-width="5" stroke-linejoin="round"/>
+      <path d="M70 51H94M70 96H94" stroke="#1a1613" stroke-width="5" stroke-linecap="round"/>
+    </g>
+          <g transform="translate(58 8) scale(0.25)">
+      <rect x="5" y="5" width="118" height="118" rx="25" fill="#fffdf9"/>
+      <rect x="5" y="5" width="118" height="118" rx="25" fill="none" stroke="#1a1613" stroke-width="7"/>
+      <path d="M39 42V86M39 64H57M39 42H57M39 86H57" stroke="#1a1613" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="39" cy="42" r="10" fill="#c8713a" stroke="#1a1613" stroke-width="5"/>
+      <circle cx="39" cy="64" r="8" fill="#3d7a4a" stroke="#1a1613" stroke-width="5"/>
+      <circle cx="39" cy="86" r="8" fill="#3f6f91" stroke="#1a1613" stroke-width="5"/>
+      <path d="M62 30H82C87 30 90 34 92 39H99C105 39 109 43 109 49V56C109 62 105 66 99 66H67C61 66 57 62 57 56V35C57 32 59 30 62 30Z" fill="#f8f5f0" stroke="#1a1613" stroke-width="5" stroke-linejoin="round"/>
+      <path d="M62 76H82C87 76 90 80 92 85H99C105 85 109 89 109 95V101C109 107 105 111 99 111H67C61 111 57 107 57 101V81C57 78 59 76 62 76Z" fill="#f8f5f0" stroke="#1a1613" stroke-width="5" stroke-linejoin="round"/>
+      <path d="M70 51H94M70 96H94" stroke="#1a1613" stroke-width="5" stroke-linecap="round"/>
+    </g>
+          <g transform="translate(105 16) scale(0.125)">
+      <rect x="5" y="5" width="118" height="118" rx="25" fill="#fffdf9"/>
+      <rect x="5" y="5" width="118" height="118" rx="25" fill="none" stroke="#1a1613" stroke-width="7"/>
+      <path d="M39 42V86M39 64H57M39 42H57M39 86H57" stroke="#1a1613" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="39" cy="42" r="10" fill="#c8713a" stroke="#1a1613" stroke-width="5"/>
+      <circle cx="39" cy="64" r="8" fill="#3d7a4a" stroke="#1a1613" stroke-width="5"/>
+      <circle cx="39" cy="86" r="8" fill="#3f6f91" stroke="#1a1613" stroke-width="5"/>
+      <path d="M62 30H82C87 30 90 34 92 39H99C105 39 109 43 109 49V56C109 62 105 66 99 66H67C61 66 57 62 57 56V35C57 32 59 30 62 30Z" fill="#f8f5f0" stroke="#1a1613" stroke-width="5" stroke-linejoin="round"/>
+      <path d="M62 76H82C87 76 90 80 92 85H99C105 85 109 89 109 95V101C109 107 105 111 99 111H67C61 111 57 107 57 101V81C57 78 59 76 62 76Z" fill="#f8f5f0" stroke="#1a1613" stroke-width="5" stroke-linejoin="round"/>
+      <path d="M70 51H94M70 96H94" stroke="#1a1613" stroke-width="5" stroke-linecap="round"/>
+    </g>
+        </g>
+        <text x="78" y="304" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="11" fill="#9a918a">128 / 48 / 32 / 16 generated</text>
+      </g>
+    
+      <g transform="translate(462 48)">
+        <rect x="-14" y="-14" width="184" height="330" rx="18" fill="#fffdf9" stroke="#e8e2da"/>
+        <g transform="translate(14 0)">
+      <rect x="5" y="5" width="118" height="118" rx="25" fill="#c8713a"/>
+      <rect x="22" y="24" width="34" height="30" rx="8" fill="#fffdf9" stroke="#1a1613" stroke-width="5"/>
+      <rect x="72" y="24" width="34" height="30" rx="8" fill="#fffdf9" stroke="#1a1613" stroke-width="5"/>
+      <rect x="22" y="74" width="34" height="30" rx="8" fill="#fffdf9" stroke="#1a1613" stroke-width="5"/>
+      <rect x="72" y="74" width="34" height="30" rx="8" fill="#fffdf9" stroke="#1a1613" stroke-width="5"/>
+      <path d="M39 54V64H89V54M39 74V64M89 74V64" stroke="#1a1613" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="64" cy="64" r="15" fill="#1a1613"/>
+      <circle cx="64" cy="64" r="6" fill="#fffdf9"/>
+      <path d="M31 34H48M81 34H98M31 84H48M81 84H98" stroke="#3d7a4a" stroke-width="5" stroke-linecap="round"/>
+    </g>
+        <text x="78" y="166" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="18" font-weight="700" fill="#1a1613">C. Hub Grid</text>
+        <text x="78" y="191" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="11" fill="#6f6862">A central hub</text><text x="78" y="207" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="11" fill="#6f6862">organizing tab cards.</text>
+        <g transform="translate(9 232)">
+          <g transform="scale(0.375)">
+      <rect x="5" y="5" width="118" height="118" rx="25" fill="#c8713a"/>
+      <rect x="22" y="24" width="34" height="30" rx="8" fill="#fffdf9" stroke="#1a1613" stroke-width="5"/>
+      <rect x="72" y="24" width="34" height="30" rx="8" fill="#fffdf9" stroke="#1a1613" stroke-width="5"/>
+      <rect x="22" y="74" width="34" height="30" rx="8" fill="#fffdf9" stroke="#1a1613" stroke-width="5"/>
+      <rect x="72" y="74" width="34" height="30" rx="8" fill="#fffdf9" stroke="#1a1613" stroke-width="5"/>
+      <path d="M39 54V64H89V54M39 74V64M89 74V64" stroke="#1a1613" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="64" cy="64" r="15" fill="#1a1613"/>
+      <circle cx="64" cy="64" r="6" fill="#fffdf9"/>
+      <path d="M31 34H48M81 34H98M31 84H48M81 84H98" stroke="#3d7a4a" stroke-width="5" stroke-linecap="round"/>
+    </g>
+          <g transform="translate(58 8) scale(0.25)">
+      <rect x="5" y="5" width="118" height="118" rx="25" fill="#c8713a"/>
+      <rect x="22" y="24" width="34" height="30" rx="8" fill="#fffdf9" stroke="#1a1613" stroke-width="5"/>
+      <rect x="72" y="24" width="34" height="30" rx="8" fill="#fffdf9" stroke="#1a1613" stroke-width="5"/>
+      <rect x="22" y="74" width="34" height="30" rx="8" fill="#fffdf9" stroke="#1a1613" stroke-width="5"/>
+      <rect x="72" y="74" width="34" height="30" rx="8" fill="#fffdf9" stroke="#1a1613" stroke-width="5"/>
+      <path d="M39 54V64H89V54M39 74V64M89 74V64" stroke="#1a1613" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="64" cy="64" r="15" fill="#1a1613"/>
+      <circle cx="64" cy="64" r="6" fill="#fffdf9"/>
+      <path d="M31 34H48M81 34H98M31 84H48M81 84H98" stroke="#3d7a4a" stroke-width="5" stroke-linecap="round"/>
+    </g>
+          <g transform="translate(105 16) scale(0.125)">
+      <rect x="5" y="5" width="118" height="118" rx="25" fill="#c8713a"/>
+      <rect x="22" y="24" width="34" height="30" rx="8" fill="#fffdf9" stroke="#1a1613" stroke-width="5"/>
+      <rect x="72" y="24" width="34" height="30" rx="8" fill="#fffdf9" stroke="#1a1613" stroke-width="5"/>
+      <rect x="22" y="74" width="34" height="30" rx="8" fill="#fffdf9" stroke="#1a1613" stroke-width="5"/>
+      <rect x="72" y="74" width="34" height="30" rx="8" fill="#fffdf9" stroke="#1a1613" stroke-width="5"/>
+      <path d="M39 54V64H89V54M39 74V64M89 74V64" stroke="#1a1613" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="64" cy="64" r="15" fill="#1a1613"/>
+      <circle cx="64" cy="64" r="6" fill="#fffdf9"/>
+      <path d="M31 34H48M81 34H98M31 84H48M81 84H98" stroke="#3d7a4a" stroke-width="5" stroke-linecap="round"/>
+    </g>
+        </g>
+        <text x="78" y="304" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="11" fill="#9a918a">128 / 48 / 32 / 16 generated</text>
+      </g>
+    
+      <g transform="translate(676 48)">
+        <rect x="-14" y="-14" width="184" height="330" rx="18" fill="#fffdf9" stroke="#e8e2da"/>
+        <g transform="translate(14 0)">
+      <rect x="5" y="5" width="118" height="118" rx="25" fill="#3d7a4a"/>
+      <path d="M31 29H58C64 29 68 34 71 40H96C102 40 107 45 107 51V88C107 97 100 104 91 104H37C28 104 21 97 21 88V39C21 33 25 29 31 29Z" fill="#fffdf9" stroke="#1a1613" stroke-width="6" stroke-linejoin="round"/>
+      <path d="M32 62C43 72 53 77 64 77C75 77 85 72 96 62" fill="none" stroke="#1a1613" stroke-width="7" stroke-linecap="round"/>
+      <path d="M39 44H76" stroke="#c8713a" stroke-width="8" stroke-linecap="round"/>
+      <path d="M39 56H88" stroke="#1a1613" stroke-width="6" stroke-linecap="round" opacity="0.82"/>
+      <circle cx="93" cy="38" r="12" fill="#3f6f91" stroke="#1a1613" stroke-width="5"/>
+      <path d="M88 38H98" stroke="#fffdf9" stroke-width="4" stroke-linecap="round"/>
+    </g>
+        <text x="78" y="166" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="18" font-weight="700" fill="#1a1613">D. Pocket Tabs</text>
+        <text x="78" y="191" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="11" fill="#6f6862">Temporary tab saving</text><text x="78" y="207" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="11" fill="#6f6862">without bookmark weight.</text>
+        <g transform="translate(9 232)">
+          <g transform="scale(0.375)">
+      <rect x="5" y="5" width="118" height="118" rx="25" fill="#3d7a4a"/>
+      <path d="M31 29H58C64 29 68 34 71 40H96C102 40 107 45 107 51V88C107 97 100 104 91 104H37C28 104 21 97 21 88V39C21 33 25 29 31 29Z" fill="#fffdf9" stroke="#1a1613" stroke-width="6" stroke-linejoin="round"/>
+      <path d="M32 62C43 72 53 77 64 77C75 77 85 72 96 62" fill="none" stroke="#1a1613" stroke-width="7" stroke-linecap="round"/>
+      <path d="M39 44H76" stroke="#c8713a" stroke-width="8" stroke-linecap="round"/>
+      <path d="M39 56H88" stroke="#1a1613" stroke-width="6" stroke-linecap="round" opacity="0.82"/>
+      <circle cx="93" cy="38" r="12" fill="#3f6f91" stroke="#1a1613" stroke-width="5"/>
+      <path d="M88 38H98" stroke="#fffdf9" stroke-width="4" stroke-linecap="round"/>
+    </g>
+          <g transform="translate(58 8) scale(0.25)">
+      <rect x="5" y="5" width="118" height="118" rx="25" fill="#3d7a4a"/>
+      <path d="M31 29H58C64 29 68 34 71 40H96C102 40 107 45 107 51V88C107 97 100 104 91 104H37C28 104 21 97 21 88V39C21 33 25 29 31 29Z" fill="#fffdf9" stroke="#1a1613" stroke-width="6" stroke-linejoin="round"/>
+      <path d="M32 62C43 72 53 77 64 77C75 77 85 72 96 62" fill="none" stroke="#1a1613" stroke-width="7" stroke-linecap="round"/>
+      <path d="M39 44H76" stroke="#c8713a" stroke-width="8" stroke-linecap="round"/>
+      <path d="M39 56H88" stroke="#1a1613" stroke-width="6" stroke-linecap="round" opacity="0.82"/>
+      <circle cx="93" cy="38" r="12" fill="#3f6f91" stroke="#1a1613" stroke-width="5"/>
+      <path d="M88 38H98" stroke="#fffdf9" stroke-width="4" stroke-linecap="round"/>
+    </g>
+          <g transform="translate(105 16) scale(0.125)">
+      <rect x="5" y="5" width="118" height="118" rx="25" fill="#3d7a4a"/>
+      <path d="M31 29H58C64 29 68 34 71 40H96C102 40 107 45 107 51V88C107 97 100 104 91 104H37C28 104 21 97 21 88V39C21 33 25 29 31 29Z" fill="#fffdf9" stroke="#1a1613" stroke-width="6" stroke-linejoin="round"/>
+      <path d="M32 62C43 72 53 77 64 77C75 77 85 72 96 62" fill="none" stroke="#1a1613" stroke-width="7" stroke-linecap="round"/>
+      <path d="M39 44H76" stroke="#c8713a" stroke-width="8" stroke-linecap="round"/>
+      <path d="M39 56H88" stroke="#1a1613" stroke-width="6" stroke-linecap="round" opacity="0.82"/>
+      <circle cx="93" cy="38" r="12" fill="#3f6f91" stroke="#1a1613" stroke-width="5"/>
+      <path d="M88 38H98" stroke="#fffdf9" stroke-width="4" stroke-linecap="round"/>
+    </g>
+        </g>
+        <text x="78" y="304" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="11" fill="#9a918a">128 / 48 / 32 / 16 generated</text>
+      </g>
+    
+  </svg>

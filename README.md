@@ -1,8 +1,8 @@
-# Tab Out
+# Tab Hub
 
 **Keep tabs on your tabs.**
 
-Tab Out is a Chrome extension that replaces your new tab page with a dashboard of everything you have open. Tabs are grouped by domain, with homepages (Gmail, X, LinkedIn, etc.) pulled into their own group. You can also pin your own common sites at the top of the page for one-click access. Close tabs with a satisfying swoosh + confetti.
+Tab Hub is a Chrome extension that replaces your new tab page with a dashboard of everything you have open. Tabs are grouped by domain, with homepages (Gmail, X, LinkedIn, etc.) pulled into their own group. You can also pin your own common sites at the top of the page for one-click access. Close tabs with a satisfying swoosh + confetti.
 
 No server. No account. No external API calls. Just a Chrome extension.
 
@@ -29,6 +29,9 @@ The agent will walk you through it. Takes about 1 minute.
 - **Duplicate detection** flags when you have the same page open twice, with one-click cleanup
 - **Click any tab to jump to it** across windows, no new tab opened
 - **Save for later** bookmark tabs to a checklist before closing them
+- **Tab Tree** keep temporary links in lightweight folders without deep bookmark-style nesting
+- **Right-click add to Tab Tree** pick an existing folder directly from the context menu, or create one in a quick page modal
+- **Toolbar controls** toggle Tab Tree or jump straight into it from the extension popup
 - **Localhost grouping** shows port numbers next to each tab so you can tell your vibe coding projects apart
 - **Expandable groups** show the first 8 tabs with a clickable "+N more"
 - **100% local** your data never leaves your machine
@@ -53,7 +56,7 @@ git clone https://github.com/zarazhangrui/tab-out.git
 
 **3. Open a new tab**
 
-You'll see Tab Out.
+You'll see Tab Hub.
 
 ---
 
@@ -61,15 +64,17 @@ You'll see Tab Out.
 
 ```
 You open a new tab
-  -> Tab Out shows your open tabs grouped by domain
+  -> Tab Hub shows your open tabs grouped by domain
   -> Your common sites sit at the top for quick access
   -> Homepages (Gmail, X, etc.) get their own group near the top
   -> Click any tab title to jump to it
   -> Close groups you're done with (swoosh + confetti)
   -> Save tabs for later before closing them
+  -> Switch to Tab Tree when you want lightweight temporary folders for links
+  -> Right-click a page to add it to a Tab Tree folder without opening bookmarks
 ```
 
-Everything runs inside the Chrome extension. No external server, no API calls, no data sent anywhere. Saved tabs and common sites are stored in `chrome.storage.local`.
+Everything runs inside the Chrome extension. No external server, no accounts, no data sent anywhere. Saved tabs, common sites, settings, and Tab Tree data are stored in `chrome.storage.local`.
 
 ---
 
