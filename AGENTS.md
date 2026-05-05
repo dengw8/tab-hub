@@ -8,7 +8,7 @@ You're helping the user install or update **Tab Hub**. Your job is not just to l
 
 Before doing anything technical, tell the user what they're about to get:
 
-> **Tab Hub** is a local Chromium extension for Chrome, Edge, and Edge Beta. It replaces the new tab page with a focused dashboard for open tabs, plus a lightweight Tab Tree for temporary links that are not worth turning into bookmarks.
+> **Tab Hub** is a local Chromium extension for Chrome, Edge, and Edge Beta. It replaces the new tab page with a focused dashboard for open tabs, plus a lightweight Tab Stash for temporary links that are not worth turning into bookmarks.
 >
 > Here's what makes it useful:
 >
@@ -18,9 +18,9 @@ Before doing anything technical, tell the user what they're about to get:
 > - **Duplicate detection** flags repeated pages and offers one-click cleanup
 > - **Click any tab title** to jump to the existing tab, even across windows
 > - **Save for later** keeps individual tabs in a local checklist before closing them
-> - **Tab Tree** stores temporary links in folders without deep bookmark-style nesting
-> - **Right-click add to Tab Tree** lets users add the current page to an existing folder or create a folder inline
-> - **Toolbar popup controls** manage Tab Tree, theme, and data transfer
+> - **Tab Stash** stores temporary links in folders without deep bookmark-style nesting
+> - **Right-click add to Tab Stash** lets users add the current page to an existing folder or create a folder inline
+> - **Toolbar popup controls** manage Tab Stash, theme, and data transfer
 > - **Import/export** moves Tab Hub data between Chrome, Edge, and Edge Beta with a local JSON backup
 > - **Light/dark themes** can follow the system or stay fixed
 > - **100% local** no server, no accounts, no Tab Hub backend
@@ -93,9 +93,9 @@ Once the extension is loaded:
 > 6. **Close individual tabs or whole groups** from the dashboard.
 > 7. **Duplicate tabs** show an amber badge and can be cleaned up.
 > 8. **Save for later** uses the bookmark icon to move a tab into the local checklist.
-> 9. **Tab Tree** is available from the top nav or toolbar popup when enabled.
-> 10. **Right-click a webpage** and choose **Add current page to Tab Tree** to add it directly to a folder.
-> 11. **Toolbar popup** lets you toggle Tab Tree, open Tab Tree, switch theme, export data, import/merge data, or replace data.
+> 9. **Tab Stash** is available from the top nav or toolbar popup when enabled.
+> 10. **Right-click a webpage** and choose **Add current page to Tab Stash** to add it directly to a folder.
+> 11. **Toolbar popup** lets you toggle Tab Stash, open Tab Stash, switch theme, export data, import/merge data, or replace data.
 
 ***
 
@@ -104,8 +104,8 @@ Once the extension is loaded:
 - Tab Hub is a pure Manifest V3 Chromium extension.
 - No server, no npm install, no build step.
 - Dashboard is always the new tab page.
-- Tab Tree is optional and enabled by default.
-- Tab Tree structure is intentionally shallow: root -> folders -> tabs.
+- Tab Stash is optional and enabled by default.
+- Tab Stash structure is intentionally shallow: root -> folders -> tabs.
 - Website icons use the Manifest V3 `_favicon` URL with the `favicon` permission; do not reintroduce third-party favicon aggregators.
 - Data is stored in `chrome.storage.local` under the versioned `tabOutStore` envelope.
 - The store includes `features`, `settings`, `data.dashboard`, `data.tabTree`, and `meta`.

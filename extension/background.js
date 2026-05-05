@@ -6,7 +6,7 @@
  *
  * Since we no longer have a server, we query chrome.tabs directly.
  * The badge counts real web tabs (skipping chrome:// and extension pages).
- * It also owns the Tab Tree context-menu entries. Existing folders are
+ * It also owns the Tab Stash context-menu entries. Existing folders are
  * direct submenu actions; creating a new folder injects a small one-off
  * modal into the current page when Chrome allows it.
  *
@@ -73,10 +73,15 @@ async function updateBadge() {
   }
 }
 
-// ─── Tab Tree context menu ────────────────────────────────────────────────────
+// ─── Tab Stash context menu ────────────────────────────────────────────────────
 
 function nowIso() {
   return new Date().toISOString();
+}
+
+function normalizeStashRootName(name) {
+  const normalized = String(name || '').trim();
+  return normalized && normalized !== ['Tab', 'Tree'].join(' ') ? normalized : 'Tab Stash';
 }
 
 function normalizeThemePreference(theme) {
@@ -106,7 +111,7 @@ function createDefaultTabTree(createdAt = nowIso()) {
       root: {
         id: 'root',
         type: 'folder',
-        name: 'Tab Tree',
+        name: 'Tab Stash',
         children: [],
         expanded: true,
         createdAt,
@@ -152,7 +157,7 @@ function normalizeTabTree(raw) {
       rawNodes[id] = {
         id,
         type: 'folder',
-        name: String(node.name || (id === 'root' ? 'Tab Tree' : 'Untitled folder')),
+        name: id === 'root' ? normalizeStashRootName(node.name) : String(node.name || 'Untitled folder'),
         children: Array.isArray(node.children) ? node.children.filter(childId => typeof childId === 'string') : [],
         expanded: typeof node.expanded === 'boolean' ? node.expanded : true,
         createdAt: node.createdAt || nowIso(),
@@ -177,7 +182,7 @@ function normalizeTabTree(raw) {
     root: {
       id: 'root',
       type: 'folder',
-      name: root.name || 'Tab Tree',
+      name: normalizeStashRootName(root.name),
       children: [],
       expanded: true,
       createdAt: root.createdAt || nowIso(),
@@ -508,7 +513,7 @@ async function syncTabTreeContextMenu() {
 
     await contextMenuCreate({
       id: TAB_TREE_CONTEXT_MENU_ID,
-      title: 'Add current page to Tab Tree',
+      title: 'Add current page to Tab Stash',
       contexts: ['page'],
     });
 
@@ -545,7 +550,7 @@ async function syncTabTreeContextMenu() {
       });
     }
   } catch (err) {
-    console.warn('[tab-out] Failed to sync Tab Tree context menu:', err);
+    console.warn('[tab-out] Failed to sync Tab Stash context menu:', err);
   }
 }
 
@@ -563,7 +568,7 @@ async function storePendingTabTreeAdd(tab) {
   try {
     await chrome.storage.session.set({ [TAB_TREE_PENDING_ADD_KEY]: pending });
   } catch (err) {
-    console.warn('[tab-out] Could not store pending Tab Tree add:', err);
+    console.warn('[tab-out] Could not store pending Tab Stash add:', err);
     return;
   }
 
@@ -584,7 +589,7 @@ async function openTabTreePicker(tab, mode = '') {
     });
     return true;
   } catch (err) {
-    console.warn('[tab-out] Could not open Tab Tree picker:', err);
+    console.warn('[tab-out] Could not open Tab Stash picker:', err);
   }
   return false;
 }
@@ -602,7 +607,7 @@ async function addCurrentTabToTreeFolder(tab, folderId) {
 
     await saveTabOutStore(store);
   } catch (err) {
-    console.warn('[tab-out] Could not add current page to Tab Tree:', err);
+    console.warn('[tab-out] Could not add current page to Tab Stash:', err);
   }
 }
 
@@ -613,7 +618,7 @@ async function createFolderAndAddCurrentTab(tab, folderName) {
 
   const normalizedUrl = normalizeTreeUrl(tab.url);
   const store = await getTabOutStore();
-  if (store.features.tabTree.enabled === false) throw new Error('Tab Tree is turned off');
+  if (store.features.tabTree.enabled === false) throw new Error('Tab Stash is turned off');
 
   const tree = store.data.tabTree;
   const timestamp = nowIso();
@@ -821,7 +826,7 @@ function showTabTreeFolderModalInPage(pageTitle, themePreference) {
     <form class="card">
       <div class="header">
         <div>
-          <div class="kicker">Tab Tree</div>
+          <div class="kicker">Tab Stash</div>
           <h1>New folder</h1>
         </div>
         <button class="close" type="button" aria-label="Close">x</button>
@@ -920,7 +925,7 @@ async function openInlineNewFolderModal(tab) {
     });
     return true;
   } catch (err) {
-    console.warn('[tab-out] Could not inject Tab Tree folder modal:', err);
+    console.warn('[tab-out] Could not inject Tab Stash folder modal:', err);
     return false;
   }
 }
@@ -938,7 +943,7 @@ async function openNewFolderFlow(tab) {
       active: true,
     });
   } catch (err) {
-    console.warn('[tab-out] Could not open any Tab Tree new-folder UI:', err);
+    console.warn('[tab-out] Could not open any Tab Stash new-folder UI:', err);
   }
 }
 

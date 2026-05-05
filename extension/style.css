@@ -35,7 +35,7 @@
 :root[data-resolved-theme="dark"] {
   color-scheme: dark;
   --ink: #f4eee6;
-  --paper: #12110f;
+  --paper: #101110;
   --warm-gray: #342f2a;
   --muted: #a79b8f;
   --accent-amber: #d58a52;
@@ -60,7 +60,11 @@
   --accent-rose-soft: rgba(207, 116, 112, 0.14);
 }
 
-* { margin: 0; padding: 0; box-sizing: border-box; }
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
 
 body {
   font-family: 'DM Sans', sans-serif;
@@ -331,8 +335,10 @@ header {
   cursor: pointer;
   position: relative;
   overflow: hidden;
-  break-inside: avoid;       /* don't split a card across columns */
-  margin-bottom: 12px;       /* vertical spacing (replaces grid gap) */
+  break-inside: avoid;
+  /* don't split a card across columns */
+  margin-bottom: 12px;
+  /* vertical spacing (replaces grid gap) */
   content-visibility: auto;
   contain-intrinsic-size: 220px;
 }
@@ -348,9 +354,17 @@ header {
   background: var(--warm-gray);
 }
 
-.mission-card.has-active-bar::before { background: var(--status-active); }
-.mission-card.has-amber-bar::before { background: var(--accent-amber); }
-.mission-card.has-neutral-bar::before { background: var(--warm-gray); }
+.mission-card.has-active-bar::before {
+  background: var(--status-active);
+}
+
+.mission-card.has-amber-bar::before {
+  background: var(--accent-amber);
+}
+
+.mission-card.has-neutral-bar::before {
+  background: var(--warm-gray);
+}
 
 .mission-card:hover {
   box-shadow: 0 4px 20px var(--shadow);
@@ -675,7 +689,7 @@ header {
   font-weight: 500;
   padding: 12px 24px;
   border-radius: 8px;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
   z-index: 100;
   opacity: 0;
   transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
@@ -751,30 +765,92 @@ footer {
 
 /* ---- Animations ---- */
 @keyframes fadeUp {
-  from { opacity: 0; transform: translateY(12px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
-header { animation: fadeUp 0.5s ease both; }
-.tab-cleanup-banner { animation: fadeUp 0.5s ease 0.1s both; }
-.nudge-banner { animation: fadeUp 0.5s ease 0.15s both; }
-.active-section .section-header { animation: fadeUp 0.5s ease 0.2s both; }
-.active-section .missions .mission-card:nth-child(1) { animation: fadeUp 0.4s ease 0.25s both; }
-.active-section .missions .mission-card:nth-child(2) { animation: fadeUp 0.4s ease 0.3s both; }
-.active-section .missions .mission-card:nth-child(3) { animation: fadeUp 0.4s ease 0.35s both; }
-.active-section .missions .mission-card:nth-child(4) { animation: fadeUp 0.4s ease 0.4s both; }
-.abandoned-section .section-header { animation: fadeUp 0.5s ease 0.45s both; }
-.abandoned-section .missions .mission-card:nth-child(1) { animation: fadeUp 0.4s ease 0.5s both; }
-.abandoned-section .missions .mission-card:nth-child(2) { animation: fadeUp 0.4s ease 0.55s both; }
-.abandoned-section .missions .mission-card:nth-child(3) { animation: fadeUp 0.4s ease 0.6s both; }
-footer { animation: fadeUp 0.5s ease 0.65s both; }
+header {
+  animation: fadeUp 0.5s ease both;
+}
 
-.deferred-list .deferred-item:nth-child(1) { animation-delay: 0.05s; }
-.deferred-list .deferred-item:nth-child(2) { animation-delay: 0.1s; }
-.deferred-list .deferred-item:nth-child(3) { animation-delay: 0.15s; }
-.deferred-list .deferred-item:nth-child(4) { animation-delay: 0.2s; }
-.deferred-list .deferred-item:nth-child(5) { animation-delay: 0.25s; }
-.deferred-column .section-header { animation: fadeUp 0.5s ease 0.1s both; }
+.tab-cleanup-banner {
+  animation: fadeUp 0.5s ease 0.1s both;
+}
+
+.nudge-banner {
+  animation: fadeUp 0.5s ease 0.15s both;
+}
+
+.active-section .section-header {
+  animation: fadeUp 0.5s ease 0.2s both;
+}
+
+.active-section .missions .mission-card:nth-child(1) {
+  animation: fadeUp 0.4s ease 0.25s both;
+}
+
+.active-section .missions .mission-card:nth-child(2) {
+  animation: fadeUp 0.4s ease 0.3s both;
+}
+
+.active-section .missions .mission-card:nth-child(3) {
+  animation: fadeUp 0.4s ease 0.35s both;
+}
+
+.active-section .missions .mission-card:nth-child(4) {
+  animation: fadeUp 0.4s ease 0.4s both;
+}
+
+.abandoned-section .section-header {
+  animation: fadeUp 0.5s ease 0.45s both;
+}
+
+.abandoned-section .missions .mission-card:nth-child(1) {
+  animation: fadeUp 0.4s ease 0.5s both;
+}
+
+.abandoned-section .missions .mission-card:nth-child(2) {
+  animation: fadeUp 0.4s ease 0.55s both;
+}
+
+.abandoned-section .missions .mission-card:nth-child(3) {
+  animation: fadeUp 0.4s ease 0.6s both;
+}
+
+footer {
+  animation: fadeUp 0.5s ease 0.65s both;
+}
+
+.deferred-list .deferred-item:nth-child(1) {
+  animation-delay: 0.05s;
+}
+
+.deferred-list .deferred-item:nth-child(2) {
+  animation-delay: 0.1s;
+}
+
+.deferred-list .deferred-item:nth-child(3) {
+  animation-delay: 0.15s;
+}
+
+.deferred-list .deferred-item:nth-child(4) {
+  animation-delay: 0.2s;
+}
+
+.deferred-list .deferred-item:nth-child(5) {
+  animation-delay: 0.25s;
+}
+
+.deferred-column .section-header {
+  animation: fadeUp 0.5s ease 0.1s both;
+}
 
 
 /* ================================================================
@@ -824,7 +900,7 @@ footer { animation: fadeUp 0.5s ease 0.65s both; }
 
   /* Soft sage glow */
   box-shadow: 0 0 0 8px rgba(90, 122, 98, 0.05),
-              0 0 0 16px rgba(90, 122, 98, 0.03);
+    0 0 0 16px rgba(90, 122, 98, 0.03);
 
   display: flex;
   align-items: center;
@@ -842,8 +918,15 @@ footer { animation: fadeUp 0.5s ease 0.65s both; }
 }
 
 @keyframes checkPop {
-  from { transform: scale(0.6); opacity: 0; }
-  to   { transform: scale(1);   opacity: 1; }
+  from {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
 }
 
 .empty-title {
@@ -892,8 +975,15 @@ footer { animation: fadeUp 0.5s ease 0.65s both; }
 }
 
 @keyframes bannerSlideIn {
-  from { opacity: 0; transform: translateY(-8px); }
-  to   { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* Left cluster: icon + text */
@@ -902,7 +992,8 @@ footer { animation: fadeUp 0.5s ease 0.65s both; }
   align-items: center;
   gap: 10px;
   flex: 1;
-  min-width: 0; /* prevents text overflow from breaking layout */
+  min-width: 0;
+  /* prevents text overflow from breaking layout */
 }
 
 .update-banner-icon {
@@ -946,7 +1037,8 @@ footer { animation: fadeUp 0.5s ease 0.65s both; }
 }
 
 .update-banner-btn:hover {
-  background: #4a6952; /* slightly darker sage */
+  background: #4a6952;
+  /* slightly darker sage */
 }
 
 .update-banner-btn:disabled {
@@ -1304,6 +1396,7 @@ footer { animation: fadeUp 0.5s ease 0.65s both; }
   .dashboard-columns {
     flex-direction: column;
   }
+
   .deferred-column {
     width: 100%;
     position: static;
@@ -1565,7 +1658,7 @@ footer { animation: fadeUp 0.5s ease 0.65s both; }
 }
 
 /* ================================================================
-   TAB TREE — Full feature view
+   TAB Stash — Full feature view
    ================================================================ */
 
 .tab-tree-shell {

@@ -13,7 +13,7 @@ Generated files per option:
 Options:
 
 - A. Stacked Tabs (a-stacked-tabs): Most direct: many browser tabs gathered into one clean place.
-- B. Tab Tree (b-tab-tree): Strongest match for the new feature: temporary folders and links.
+- B. Tab Stash (b-tab-tree): Strongest match for the new feature: temporary folders and links.
 - C. Hub Grid (c-hub-grid): Best for the product name: a central hub organizing tab cards.
 - D. Pocket Tabs (d-pocket-tabs): Lightweight and calm: save temporary tabs without bookmark heaviness.
 

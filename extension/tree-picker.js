@@ -18,6 +18,11 @@ function nowIso() {
   return new Date().toISOString();
 }
 
+function normalizeStashRootName(name) {
+  const normalized = String(name || '').trim();
+  return normalized && normalized !== ['Tab', 'Tree'].join(' ') ? normalized : 'Tab Stash';
+}
+
 function normalizeThemePreference(theme) {
   return THEME_OPTIONS.includes(theme) ? theme : 'system';
 }
@@ -57,7 +62,7 @@ function createDefaultTabTree(createdAt = nowIso()) {
       root: {
         id: 'root',
         type: 'folder',
-        name: 'Tab Tree',
+        name: 'Tab Stash',
         children: [],
         expanded: true,
         createdAt,
@@ -103,7 +108,7 @@ function normalizeTabTree(raw) {
       rawNodes[id] = {
         id,
         type: 'folder',
-        name: String(node.name || (id === 'root' ? 'Tab Tree' : 'Untitled folder')),
+        name: id === 'root' ? normalizeStashRootName(node.name) : String(node.name || 'Untitled folder'),
         children: Array.isArray(node.children) ? node.children.filter(childId => typeof childId === 'string') : [],
         expanded: typeof node.expanded === 'boolean' ? node.expanded : true,
         createdAt: node.createdAt || nowIso(),
@@ -128,7 +133,7 @@ function normalizeTabTree(raw) {
     root: {
       id: 'root',
       type: 'folder',
-      name: root.name || 'Tab Tree',
+      name: normalizeStashRootName(root.name),
       children: [],
       expanded: true,
       createdAt: root.createdAt || nowIso(),
@@ -482,7 +487,7 @@ function renderFolders() {
   if (!enabled) {
     list.innerHTML = '';
     empty.style.display = 'block';
-    empty.textContent = 'Tab Tree is turned off in Settings.';
+    empty.textContent = 'Tab Stash is turned off in Settings.';
     return;
   }
 
@@ -523,7 +528,7 @@ async function addPendingToFolder(folderId) {
   try {
     const store = normalizeStore(currentStore || await getStore());
     if (store.features.tabTree.enabled === false) {
-      throw new Error('Tab Tree is turned off in Settings.');
+      throw new Error('Tab Stash is turned off in Settings.');
     }
     const tree = store.data.tabTree;
     upsertTreeTabInFolder(tree, folderId, getPendingDisplayTitle(), pendingPage.url);
@@ -550,7 +555,7 @@ async function createFolderAndAdd(name) {
   try {
     const store = normalizeStore(currentStore || await getStore());
     if (store.features.tabTree.enabled === false) {
-      throw new Error('Tab Tree is turned off in Settings.');
+      throw new Error('Tab Stash is turned off in Settings.');
     }
     const tree = store.data.tabTree;
     const timestamp = nowIso();

@@ -12,6 +12,11 @@ function nowIso() {
   return new Date().toISOString();
 }
 
+function normalizeStashRootName(name) {
+  const normalized = String(name || '').trim();
+  return normalized && normalized !== ['Tab', 'Tree'].join(' ') ? normalized : 'Tab Stash';
+}
+
 function createScopedId(prefix) {
   if (globalThis.crypto && typeof globalThis.crypto.randomUUID === 'function') {
     return `${prefix}_${globalThis.crypto.randomUUID()}`;
@@ -44,7 +49,7 @@ function createDefaultTabTree(createdAt = nowIso()) {
       root: {
         id: 'root',
         type: 'folder',
-        name: 'Tab Tree',
+        name: 'Tab Stash',
         children: [],
         expanded: true,
         createdAt,
@@ -95,6 +100,7 @@ function normalizeTabTree(raw) {
 
   const rootChildren = Array.isArray(nodes.root.children) ? nodes.root.children : [];
   nodes.root.children = [];
+  nodes.root.name = normalizeStashRootName(nodes.root.name);
 
   for (const childId of rootChildren) {
     const folder = raw.nodes[childId];
@@ -450,10 +456,10 @@ function mergeStores(targetStore, importedStore) {
 
 function formatImportStats(stats, mode) {
   if (mode === 'replace') {
-    return `Replaced data: ${stats.favorites} sites, ${stats.savedTabs} saved tabs, ${stats.folders} folders, ${stats.treeTabs} tree tabs.`;
+    return `Replaced data: ${stats.favorites} sites, ${stats.savedTabs} saved tabs, ${stats.folders} folders, ${stats.treeTabs} stash links.`;
   }
 
-  return `Merged data: +${stats.favoritesAdded} sites, +${stats.savedTabsAdded} saved tabs, +${stats.foldersAdded} folders, +${stats.treeTabsAdded} tree tabs, ${stats.treeTabsUpdated} updated.`;
+  return `Merged data: +${stats.favoritesAdded} sites, +${stats.savedTabsAdded} saved tabs, +${stats.foldersAdded} folders, +${stats.treeTabsAdded} stash links, ${stats.treeTabsUpdated} updated.`;
 }
 
 function createExportEnvelope(store) {
@@ -489,7 +495,7 @@ async function exportData() {
   const date = new Date().toISOString().slice(0, 10);
   downloadJsonFile(`tab-hub-backup-${date}.json`, envelope);
   const counts = countStoreData(store);
-  setMessage(`Exported ${counts.favorites} sites, ${counts.savedTabs} saved tabs, ${counts.folders} folders, ${counts.treeTabs} tree tabs.`);
+  setMessage(`Exported ${counts.favorites} sites, ${counts.savedTabs} saved tabs, ${counts.folders} folders, ${counts.treeTabs} stash links.`);
 }
 
 async function importDataFromFile(file, mode) {
@@ -630,7 +636,7 @@ document.getElementById('tabTreeToggle')?.addEventListener('change', async event
     await setTabTreeEnabled(event.target.checked);
   } catch (err) {
     event.target.checked = !event.target.checked;
-    setError(err && err.message ? err.message : 'Could not update Tab Tree');
+    setError(err && err.message ? err.message : 'Could not update Tab Stash');
   }
 });
 
@@ -640,7 +646,7 @@ document.getElementById('openTabTreeButton')?.addEventListener('click', async ()
     setMessage('');
     await openTabTree();
   } catch (err) {
-    setError(err && err.message ? err.message : 'Could not open Tab Tree');
+    setError(err && err.message ? err.message : 'Could not open Tab Stash');
   }
 });
 

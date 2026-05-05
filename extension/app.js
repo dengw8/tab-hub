@@ -251,6 +251,11 @@ function nowIso() {
   return new Date().toISOString();
 }
 
+function normalizeStashRootName(name) {
+  const normalized = String(name || '').trim();
+  return normalized && normalized !== ['Tab', 'Tree'].join(' ') ? normalized : 'Tab Stash';
+}
+
 function createDefaultTabTree(createdAt = nowIso()) {
   return {
     schemaVersion: 2,
@@ -260,7 +265,7 @@ function createDefaultTabTree(createdAt = nowIso()) {
       root: {
         id: 'root',
         type: 'folder',
-        name: 'Tab Tree',
+        name: 'Tab Stash',
         children: [],
         expanded: true,
         createdAt,
@@ -549,7 +554,7 @@ async function moveFavorite(draggedId, targetId) {
 
 
 /* ----------------------------------------------------------------
-   TAB TREE — Data model, storage, URL handling
+   TAB Stash — Data model, storage, URL handling
    ---------------------------------------------------------------- */
 
 const TAB_TREE_ALLOWED_PROTOCOLS = ['http:', 'https:', 'chrome:', 'chrome-extension:', 'about:', 'file:'];
@@ -579,7 +584,7 @@ function normalizeTabTree(raw) {
       rawNodes[id] = {
         id,
         type: 'folder',
-        name: String(node.name || (id === 'root' ? 'Tab Tree' : 'Untitled folder')),
+        name: id === 'root' ? normalizeStashRootName(node.name) : String(node.name || 'Untitled folder'),
         children: Array.isArray(node.children) ? node.children.filter(childId => typeof childId === 'string') : [],
         expanded: typeof node.expanded === 'boolean' ? node.expanded : true,
         createdAt: node.createdAt || nowIso(),
@@ -604,7 +609,7 @@ function normalizeTabTree(raw) {
     root: {
       id: 'root',
       type: 'folder',
-      name: root.name || 'Tab Tree',
+      name: normalizeStashRootName(root.name),
       children: [],
       expanded: true,
       createdAt: root.createdAt || nowIso(),
@@ -1329,7 +1334,7 @@ async function showDashboardView(options = {}) {
 
 async function showTabTreeView(options = {}) {
   if (!await isTabTreeEnabled()) {
-    showToast('Tab Tree is turned off');
+    showToast('Tab Stash is turned off');
     await showDashboardView({ updateHash: true });
     return;
   }
@@ -2685,7 +2690,7 @@ document.addEventListener('click', async (e) => {
   if (action === 'enable-tab-tree') {
     await setTabTreeEnabled(true);
     await showTabTreeView();
-    showToast('Tab Tree enabled');
+    showToast('Tab Stash enabled');
     return;
   }
 

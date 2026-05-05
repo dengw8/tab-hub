@@ -60,8 +60,8 @@
       <path d="M62 76H82C87 76 90 80 92 85H99C105 85 109 89 109 95V101C109 107 105 111 99 111H67C61 111 57 107 57 101V81C57 78 59 76 62 76Z" fill="#f8f5f0" stroke="#1a1613" stroke-width="5" stroke-linejoin="round"/>
       <path d="M70 51H94M70 96H94" stroke="#1a1613" stroke-width="5" stroke-linecap="round"/>
     </g>
-        <text x="78" y="166" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="18" font-weight="700" fill="#1a1613">B. Tab Tree</text>
-        <text x="78" y="191" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="11" fill="#6f6862">Folders and links</text><text x="78" y="207" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="11" fill="#6f6862">as a lightweight tree.</text>
+        <text x="78" y="166" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="18" font-weight="700" fill="#1a1613">B. Tab Stash</text>
+        <text x="78" y="191" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="11" fill="#6f6862">Folders and links</text><text x="78" y="207" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="11" fill="#6f6862">as a lightweight stash.</text>
         <g transform="translate(9 232)">
           <g transform="scale(0.375)">
       <rect x="5" y="5" width="118" height="118" rx="25" fill="#fffdf9"/>

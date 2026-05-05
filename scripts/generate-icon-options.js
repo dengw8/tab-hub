@@ -39,9 +39,9 @@ const options = [
   {
     key: 'b-tab-tree',
     label: 'B',
-    name: 'Tab Tree',
+    name: 'Tab Stash',
     summary: 'Strongest match for the new feature: temporary folders and links.',
-    previewLines: ['Folders and links', 'as a lightweight tree.'],
+    previewLines: ['Folders and links', 'as a lightweight stash.'],
     body: `
       <rect x="5" y="5" width="118" height="118" rx="25" fill="${palette.paper}"/>
       <rect x="5" y="5" width="118" height="118" rx="25" fill="none" stroke="${palette.ink}" stroke-width="7"/>

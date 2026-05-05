@@ -4,40 +4,29 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Tab Hub Controls</title>
+  <title>Tab Hub</title>
   <link rel="stylesheet" href="popup.css">
 </head>
 
 <body>
   <main class="popup-shell">
     <header class="popup-header">
-      <div>
-        <div class="popup-kicker">Tab Hub</div>
-        <h1>Controls</h1>
-      </div>
+      <div class="popup-kicker">Tab Hub</div>
       <div class="status-dot" id="statusDot" title="Ready"></div>
     </header>
-
-    <section class="feature-card fixed">
-      <div>
-        <div class="feature-title">Dashboard</div>
-        <div class="feature-subtitle">New tab entry is always on.</div>
-      </div>
-      <span class="feature-badge">Fixed</span>
-    </section>
 
     <section class="feature-card">
       <div class="feature-row">
         <div>
-          <div class="feature-title">Tab Tree</div>
+          <div class="feature-title">Tab Stash</div>
           <div class="feature-subtitle">Temporary folders for links.</div>
         </div>
-        <label class="switch" title="Toggle Tab Tree">
+        <label class="switch" title="Toggle Tab Stash">
           <input type="checkbox" id="tabTreeToggle">
           <span></span>
         </label>
       </div>
-      <button class="primary-action" type="button" id="openTabTreeButton">Open Tab Tree</button>
+      <button class="primary-action" type="button" id="openTabTreeButton">Open Tab Stash</button>
     </section>
 
     <section class="feature-card">
@@ -59,11 +48,6 @@
         <button class="secondary-action danger" type="button" data-import-mode="replace">Replace data</button>
       </div>
       <input type="file" id="importFileInput" accept="application/json,.json" hidden>
-    </section>
-
-    <section class="feature-card muted">
-      <div class="feature-title">More features</div>
-      <div class="feature-subtitle">Future controls will live here.</div>
     </section>
 
     <div class="popup-message" id="popupMessage" style="display:none"></div>

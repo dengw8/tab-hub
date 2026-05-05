@@ -27,7 +27,7 @@
       <nav class="app-nav" aria-label="Tab Hub features">
         <button class="app-nav-item active" type="button" data-action="show-dashboard"
           id="dashboardNavButton">Dashboard</button>
-        <button class="app-nav-item" type="button" data-action="show-tab-tree" id="tabTreeNavButton">Tab Tree</button>
+        <button class="app-nav-item" type="button" data-action="show-tab-tree" id="tabTreeNavButton">Tab Stash</button>
         <button class="app-nav-icon" type="button" data-action="open-settings-modal" aria-label="Settings"
           title="Settings">
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8"
@@ -155,17 +155,17 @@
     </main>
 
     <!-- ================================================================
-       TAB TREE — optional feature view
+       TAB Stash — optional feature view
        ================================================================ -->
     <main class="feature-view tab-tree-view" id="tabTreeView" style="display:none">
       <section class="tab-tree-shell">
         <div class="tab-tree-toolbar">
           <div>
-            <div class="tab-tree-kicker">Temporary structure</div>
-            <h2>Tab Tree</h2>
+            <div class="tab-tree-kicker">Temporary stash</div>
+            <h2>Tab Stash</h2>
           </div>
           <div class="tab-tree-actions">
-            <input type="search" class="tab-tree-search" id="tabTreeSearch" placeholder="Search tree..."
+            <input type="search" class="tab-tree-search" id="tabTreeSearch" placeholder="Search stash..."
               autocomplete="off" spellcheck="false">
             <button class="action-btn primary" type="button" data-action="add-tree-folder" data-parent-id="root">Add
               folder</button>
@@ -173,7 +173,7 @@
         </div>
 
         <div class="tab-tree-disabled" id="tabTreeDisabled" style="display:none">
-          <div class="tab-tree-empty-title">Tab Tree is turned off.</div>
+          <div class="tab-tree-empty-title">Tab Stash is turned off.</div>
           <button class="action-btn primary" type="button" data-action="enable-tab-tree">Turn it on</button>
         </div>
 
@@ -245,8 +245,8 @@
       <label class="settings-toggle">
         <input type="checkbox" id="tabTreeEnabledInput">
         <span>
-          <strong>Tab Tree</strong>
-          <small>Show the temporary tree feature in Tab Hub.</small>
+          <strong>Tab Stash</strong>
+          <small>Show the temporary stash feature in Tab Hub.</small>
         </span>
       </label>
 
@@ -270,7 +270,7 @@
   </div>
 
   <!-- ================================================================
-     TAB TREE NODE MODAL — add top-level folders or tabs inside a folder
+     TAB Stash NODE MODAL — add top-level folders or tabs inside a folder
      ================================================================ -->
   <div class="modal-backdrop" id="treeTabModal" style="display:none">
     <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="treeTabModalTitle">

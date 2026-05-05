@@ -2,7 +2,7 @@
 
 **Keep tabs on your tabs.**
 
-Tab Hub is a local Chromium extension for Chrome, Edge, and Edge Beta. It replaces the new tab page with a clean dashboard of open tabs grouped by domain, and adds a lightweight Tab Tree for temporary links that are useful right now but too small to become bookmarks.
+Tab Hub is a local Chromium extension for Chrome, Edge, and Edge Beta. It replaces the new tab page with a clean dashboard of open tabs grouped by domain, and adds a lightweight Tab Stash for temporary links that are useful right now but too small to become bookmarks.
 
 No server. No account. No Tab Hub backend. Your data stays in browser extension storage unless you explicitly export it.
 
@@ -16,9 +16,9 @@ No server. No account. No Tab Hub backend. Your data stays in browser extension 
 - **Duplicate detection** flags repeated pages with one-click cleanup
 - **Jump to tab** opens the existing tab instead of creating another one
 - **Save for later** keeps tabs in a local checklist before closing them
-- **Tab Tree** stores temporary links in shallow folders
-- **Right-click add to Tab Tree** adds the current page to an existing folder or creates a folder inline
-- **Toolbar popup** controls Tab Tree, theme, import, and export
+- **Tab Stash** stores temporary links in shallow folders
+- **Right-click add to Tab Stash** adds the current page to an existing folder or creates a folder inline
+- **Toolbar popup** controls Tab Stash, theme, import, and export
 - **Import/export** moves data between Chrome, Edge, and Edge Beta using local JSON backups
 - **Light/dark themes** can follow system appearance or stay fixed
 - **Localhost grouping** shows port numbers so local projects are easier to tell apart
@@ -60,20 +60,20 @@ You open a new tab
   -> Click a tab title to jump to that existing tab
   -> Close tabs or groups when you're done
   -> Save tabs for later before closing them
-  -> Use Tab Tree for temporary folders of links
-  -> Right-click a page to add it to a Tab Tree folder
+  -> Use Tab Stash for temporary folders of links
+  -> Right-click a page to add it to a Tab Stash folder
   -> Use the toolbar popup for theme and data transfer
 ```
 
-Dashboard is the fixed new tab entry. Tab Tree is an optional feature and is enabled by default.
+Dashboard is the fixed new tab entry. Tab Stash is an optional feature and is enabled by default.
 
 ---
 
-## Tab Tree
+## Tab Stash
 
-Tab Tree is intentionally lighter than bookmarks.
+Tab Stash is intentionally lighter than bookmarks.
 
-- There is one Tab Tree.
+- There is one Tab Stash.
 - The root contains folders.
 - Folders contain tab links.
 - Folders do not contain nested folders.
@@ -81,7 +81,7 @@ Tab Tree is intentionally lighter than bookmarks.
 - Adding the same URL to the same folder updates that item and moves it to the latest position.
 - The same URL can still exist in different folders.
 
-You can add links from the Tab Tree page or from the browser right-click menu.
+You can add links from the Tab Stash page or from the browser right-click menu.
 
 ---
 
@@ -89,8 +89,8 @@ You can add links from the Tab Tree page or from the browser right-click menu.
 
 Click the Tab Hub icon in the browser toolbar to open controls:
 
-- Toggle Tab Tree on/off
-- Open Tab Tree
+- Toggle Tab Stash on/off
+- Open Tab Stash
 - Choose theme: **System**, **Light**, or **Dark**
 - Export data
 - Import and merge data
@@ -112,10 +112,10 @@ tab-hub-backup-YYYY-MM-DD.json
 
 Import modes:
 
-- **Import merge** keeps existing data and adds backup data. Common sites are deduped by URL. Tab Tree folders are merged by folder name. Repeated URLs in the same folder are updated and moved to the latest position.
+- **Import merge** keeps existing data and adds backup data. Common sites are deduped by URL. Tab Stash folders are merged by folder name. Repeated URLs in the same folder are updated and moved to the latest position.
 - **Replace data** overwrites the current browser's Tab Hub data with the selected backup.
 
-The backup includes feature flags, theme settings, Common sites, Saved for later, Tab Tree data, and metadata.
+The backup includes feature flags, theme settings, Common sites, Saved for later, Tab Stash data, and metadata.
 
 ---
 
@@ -144,7 +144,7 @@ Legacy `favorites` and `deferred` keys are migrated into `data.dashboard` when t
 | New tab | `chrome_url_overrides.newtab` |
 | Storage | `chrome.storage.local` |
 | Context menu | `chrome.contextMenus` |
-| Page injection | `chrome.scripting` for inline Tab Tree folder creation |
+| Page injection | `chrome.scripting` for inline Tab Stash folder creation |
 | Favicons | Manifest V3 `_favicon` URL with the `favicon` permission |
 | Sound | Web Audio API |
 | UI | Plain HTML, CSS, and JavaScript |
