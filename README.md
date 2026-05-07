@@ -19,6 +19,8 @@ No server. No account. No Tab Hub backend. Your data stays in browser extension 
 - **Tab Stash** stores temporary links in shallow folders
 - **Tab Atlas** organizes knowledge topics with nested subtopics, source tabs, and optional notes
 - **Right-click add to Tab Stash** adds the current page to an existing folder or creates a folder inline
+- **Right-click add to Tab Atlas** saves the current page into an existing knowledge topic from an inline picker
+- **Settings** can toggle optional Tab Stash and Tab Atlas views
 - **Toolbar popup** controls Tab Stash, theme, import, and export
 - **Import/export** moves data between Chrome, Edge, and Edge Beta using local JSON backups
 - **Light/dark themes** can follow system appearance or stay fixed
@@ -63,6 +65,8 @@ You open a new tab
   -> Save tabs for later before closing them
   -> Use Tab Stash for temporary folders of links
   -> Right-click a page to add it to a Tab Stash folder
+  -> Use Tab Atlas for structured knowledge topics and source tabs
+  -> Right-click a page to add it to an Atlas topic without leaving the page
   -> Use the toolbar popup for theme and data transfer
 ```
 
@@ -90,13 +94,18 @@ You can add links from the Tab Stash page or from the browser right-click menu.
 Tab Atlas is for knowledge you want to keep structured instead of temporarily parked.
 
 - The Tab Atlas home shows top-level knowledge topics as a list.
-- Each top-level topic opens into a fully expanded topic tree.
+- Each top-level topic opens into a topic tree with expandable and collapsible branches.
 - Topic depth is capped at three levels.
 - Every topic can have an optional note.
 - Tabs can be attached to any topic level.
 - Every attached tab has a title, URL, and optional note.
 - Topic names must be unique among siblings. Tab titles can repeat.
 - Drag topics and tab sources inside a top-level topic to reorganize the atlas.
+- Add topic and add tab share one modal; at the maximum topic depth, only tab sources can be added.
+- Right-click **Add current page to Tab Atlas** opens an inline picker on the current page.
+- The inline picker shows a collapsible topic tree, remembers recent target topics, and saves an optional tab note.
+- If there is no top-level topic yet, the right-click flow creates a `Default` L1 topic with no note before opening the picker.
+- Adding the same URL to the same topic updates that source tab and moves it to the latest position.
 
 ---
 
@@ -110,6 +119,8 @@ Click the Tab Hub icon in the browser toolbar to open controls:
 - Export data
 - Import and merge data
 - Replace local data from a backup
+
+Tab Atlas can be toggled from the Settings modal inside the Tab Hub new tab page.
 
 ---
 
@@ -159,8 +170,8 @@ Legacy `favorites` and `deferred` keys are migrated into `data.dashboard` when t
 | Extension | Chrome Manifest V3 |
 | New tab | `chrome_url_overrides.newtab` |
 | Storage | `chrome.storage.local` |
-| Context menu | `chrome.contextMenus` |
-| Page injection | `chrome.scripting` for inline Tab Stash folder creation |
+| Context menu | `chrome.contextMenus` for Tab Stash and Tab Atlas quick add |
+| Page injection | `chrome.scripting` for inline Tab Stash folder creation and Tab Atlas topic picker |
 | Favicons | Manifest V3 `_favicon` URL with the `favicon` permission |
 | Sound | Web Audio API |
 | UI | Plain HTML, CSS, and JavaScript |
