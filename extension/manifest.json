@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Tab Hub",
   "version": "1.0.0",
-  "description": "Keep tabs on your tabs. New tab dashboard with cleanup tools and lightweight temporary folders.",
+  "description": "Keep tabs on your tabs. New tab dashboard with cleanup tools, temporary folders, and knowledge maps.",
   "permissions": ["tabs", "activeTab", "storage", "contextMenus", "scripting", "favicon"],
   "chrome_url_overrides": { "newtab": "index.html" },
   "background": { "service_worker": "background.js" },

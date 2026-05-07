@@ -28,6 +28,7 @@
         <button class="app-nav-item active" type="button" data-action="show-dashboard"
           id="dashboardNavButton">Dashboard</button>
         <button class="app-nav-item" type="button" data-action="show-tab-tree" id="tabTreeNavButton">Tab Stash</button>
+        <button class="app-nav-item" type="button" data-action="show-tab-atlas" id="tabAtlasNavButton">Tab Atlas</button>
         <button class="app-nav-icon" type="button" data-action="open-settings-modal" aria-label="Settings"
           title="Settings">
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8"
@@ -181,6 +182,50 @@
       </section>
     </main>
 
+    <!-- ================================================================
+       TAB Atlas — optional knowledge map feature view
+       ================================================================ -->
+    <main class="feature-view tab-atlas-view" id="tabAtlasView" style="display:none">
+      <section class="tab-tree-shell" id="tabAtlasShell">
+        <div class="atlas-home" id="tabAtlasHome">
+          <div class="tab-tree-toolbar">
+            <div>
+              <div class="tab-tree-kicker">Knowledge map</div>
+              <h2>Tab Atlas</h2>
+            </div>
+            <div class="tab-tree-actions">
+              <input type="search" class="tab-tree-search" id="tabAtlasHomeSearch" placeholder="Search atlas..."
+                autocomplete="off" spellcheck="false">
+              <button class="action-btn primary" type="button" data-action="add-atlas-topic">Add topic</button>
+            </div>
+          </div>
+          <div class="atlas-home-list" id="tabAtlasHomeList"></div>
+        </div>
+
+        <div class="atlas-detail" id="tabAtlasDetail" style="display:none">
+          <div class="tab-tree-toolbar">
+            <div>
+              <button class="atlas-back" type="button" data-action="show-tab-atlas">Back to Atlas</button>
+              <h2 id="tabAtlasDetailTitle">Tab Atlas</h2>
+              <div class="atlas-detail-note" id="tabAtlasDetailNote"></div>
+            </div>
+            <div class="tab-tree-actions">
+              <input type="search" class="tab-tree-search" id="tabAtlasDetailSearch" placeholder="Search this topic..."
+                autocomplete="off" spellcheck="false">
+              <button class="action-btn" type="button" data-action="edit-current-atlas-topic">Edit</button>
+              <button class="action-btn primary" type="button" data-action="add-atlas-child-to-current">Add</button>
+            </div>
+          </div>
+          <div class="atlas-detail-surface" id="tabAtlasDetailSurface"></div>
+        </div>
+      </section>
+
+      <div class="tab-tree-disabled" id="tabAtlasDisabled" style="display:none">
+        <div class="tab-tree-empty-title">Tab Atlas is turned off.</div>
+        <button class="action-btn primary" type="button" data-action="enable-tab-atlas">Turn it on</button>
+      </div>
+    </main>
+
   </div><!-- end .container -->
 
   <!-- ================================================================
@@ -250,6 +295,14 @@
         </span>
       </label>
 
+      <label class="settings-toggle">
+        <input type="checkbox" id="tabAtlasEnabledInput">
+        <span>
+          <strong>Tab Atlas</strong>
+          <small>Show the knowledge map feature in Tab Hub.</small>
+        </span>
+      </label>
+
       <label class="settings-field" for="themePreferenceInput">
         <span>
           <strong>Theme</strong>
@@ -307,6 +360,155 @@
         <div class="modal-actions">
           <button class="action-btn" type="button" data-action="close-tree-tab-modal">Cancel</button>
           <button class="action-btn primary" type="submit" id="treeTabSubmitButton">Continue</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ================================================================
+     TAB Atlas ADD MODAL — add either a source tab or a subtopic
+     ================================================================ -->
+  <div class="modal-backdrop" id="atlasAddModal" style="display:none">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="atlasAddModalTitle">
+      <div class="modal-header">
+        <h2 id="atlasAddModalTitle">Add to topic</h2>
+        <button class="modal-close" type="button" data-action="close-atlas-add-modal" aria-label="Close">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2"
+            stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+
+      <form class="favorite-form" id="atlasAddForm">
+        <input type="hidden" id="atlasAddTopicInput">
+        <input type="hidden" id="atlasAddTypeInput" value="tab">
+        <input type="hidden" id="atlasAddModeInput" value="add">
+
+        <div class="atlas-type-toggle" role="group" aria-label="Choose what to add">
+          <button class="atlas-type-button active" type="button" data-action="select-atlas-add-type"
+            data-add-type="tab" id="atlasAddTabTypeButton">Tab</button>
+          <button class="atlas-type-button" type="button" data-action="select-atlas-add-type" data-add-type="topic"
+            id="atlasAddTopicTypeButton">Topic</button>
+        </div>
+
+        <div class="atlas-add-notice" id="atlasAddDepthNotice" style="display:none">
+          Maximum topic depth reached
+        </div>
+
+        <div id="atlasAddTabFields">
+          <label class="favorite-label" for="atlasAddUrlInput">URL</label>
+          <input type="text" class="favorite-input" id="atlasAddUrlInput" placeholder="https://example.com"
+            autocomplete="off" spellcheck="false">
+
+          <div id="atlasAddTitleGroup" style="display:none">
+            <label class="favorite-label" for="atlasAddTitleInput">Title</label>
+            <input type="text" class="favorite-input" id="atlasAddTitleInput" placeholder="Page title"
+              autocomplete="off" spellcheck="false">
+          </div>
+
+          <label class="favorite-label" for="atlasAddTabNoteInput">Note</label>
+          <textarea class="favorite-input atlas-textarea" id="atlasAddTabNoteInput" placeholder="Why is this useful here?"
+            spellcheck="true"></textarea>
+        </div>
+
+        <div id="atlasAddTopicFields" style="display:none">
+          <label class="favorite-label" for="atlasAddTopicNameInput">Topic name</label>
+          <input type="text" class="favorite-input" id="atlasAddTopicNameInput" placeholder="Manifest V3"
+            autocomplete="off" spellcheck="false">
+
+          <label class="favorite-label" for="atlasAddTopicNoteInput">Note</label>
+          <textarea class="favorite-input atlas-textarea" id="atlasAddTopicNoteInput" placeholder="What belongs in this topic?"
+            spellcheck="true"></textarea>
+        </div>
+
+        <div class="favorite-error" id="atlasAddError" style="display:none"></div>
+
+        <div class="modal-actions">
+          <button class="action-btn" type="button" data-action="close-atlas-add-modal">Cancel</button>
+          <button class="action-btn primary" type="submit" id="atlasAddSubmitButton">Continue</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ================================================================
+     TAB Atlas TOPIC MODAL — add/edit knowledge topics
+     ================================================================ -->
+  <div class="modal-backdrop" id="atlasTopicModal" style="display:none">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="atlasTopicModalTitle">
+      <div class="modal-header">
+        <h2 id="atlasTopicModalTitle">Add topic</h2>
+        <button class="modal-close" type="button" data-action="close-atlas-topic-modal" aria-label="Close">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2"
+            stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+
+      <form class="favorite-form" id="atlasTopicForm">
+        <input type="hidden" id="atlasTopicModeInput">
+        <input type="hidden" id="atlasTopicParentInput">
+        <input type="hidden" id="atlasTopicIdInput">
+
+        <label class="favorite-label" for="atlasTopicNameInput">Topic name</label>
+        <input type="text" class="favorite-input" id="atlasTopicNameInput" placeholder="Chrome Extension"
+          autocomplete="off" spellcheck="false">
+
+        <label class="favorite-label" for="atlasTopicNoteInput">Note</label>
+        <textarea class="favorite-input atlas-textarea" id="atlasTopicNoteInput" placeholder="What belongs in this topic?"
+          spellcheck="true"></textarea>
+
+        <div class="favorite-error" id="atlasTopicError" style="display:none"></div>
+
+        <div class="modal-actions">
+          <button class="action-btn" type="button" data-action="close-atlas-topic-modal">Cancel</button>
+          <button class="action-btn primary" type="submit">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ================================================================
+     TAB Atlas TAB MODAL — add/edit source tabs
+     ================================================================ -->
+  <div class="modal-backdrop" id="atlasTabModal" style="display:none">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="atlasTabModalTitle">
+      <div class="modal-header">
+        <h2 id="atlasTabModalTitle">Add tab</h2>
+        <button class="modal-close" type="button" data-action="close-atlas-tab-modal" aria-label="Close">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2"
+            stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+
+      <form class="favorite-form" id="atlasTabForm">
+        <input type="hidden" id="atlasTabModeInput">
+        <input type="hidden" id="atlasTabTopicInput">
+        <input type="hidden" id="atlasTabIdInput">
+
+        <label class="favorite-label" for="atlasTabUrlInput">URL</label>
+        <input type="text" class="favorite-input" id="atlasTabUrlInput" placeholder="https://example.com"
+          autocomplete="off" spellcheck="false">
+
+        <div id="atlasTabTitleGroup" style="display:none">
+          <label class="favorite-label" for="atlasTabTitleInput">Title</label>
+          <input type="text" class="favorite-input" id="atlasTabTitleInput" placeholder="Page title"
+            autocomplete="off" spellcheck="false">
+        </div>
+
+        <label class="favorite-label" for="atlasTabNoteInput">Note</label>
+        <textarea class="favorite-input atlas-textarea" id="atlasTabNoteInput" placeholder="Why is this useful here?"
+          spellcheck="true"></textarea>
+
+        <div class="favorite-error" id="atlasTabError" style="display:none"></div>
+
+        <div class="modal-actions">
+          <button class="action-btn" type="button" data-action="close-atlas-tab-modal">Cancel</button>
+          <button class="action-btn primary" type="submit" id="atlasTabSubmitButton">Continue</button>
         </div>
       </form>
     </div>

@@ -2,7 +2,7 @@
 
 **Keep tabs on your tabs.**
 
-Tab Hub is a local Chromium extension for Chrome, Edge, and Edge Beta. It replaces the new tab page with a clean dashboard of open tabs grouped by domain, and adds a lightweight Tab Stash for temporary links that are useful right now but too small to become bookmarks.
+Tab Hub is a local Chromium extension for Chrome, Edge, and Edge Beta. It replaces the new tab page with a clean dashboard of open tabs grouped by domain, adds a lightweight Tab Stash for temporary links, and includes Tab Atlas for organizing knowledge with tabs.
 
 No server. No account. No Tab Hub backend. Your data stays in browser extension storage unless you explicitly export it.
 
@@ -17,6 +17,7 @@ No server. No account. No Tab Hub backend. Your data stays in browser extension 
 - **Jump to tab** opens the existing tab instead of creating another one
 - **Save for later** keeps tabs in a local checklist before closing them
 - **Tab Stash** stores temporary links in shallow folders
+- **Tab Atlas** organizes knowledge topics with nested subtopics, source tabs, and optional notes
 - **Right-click add to Tab Stash** adds the current page to an existing folder or creates a folder inline
 - **Toolbar popup** controls Tab Stash, theme, import, and export
 - **Import/export** moves data between Chrome, Edge, and Edge Beta using local JSON backups
@@ -66,6 +67,7 @@ You open a new tab
 ```
 
 Dashboard is the fixed new tab entry. Tab Stash is an optional feature and is enabled by default.
+Tab Atlas is also optional and enabled by default.
 
 ---
 
@@ -82,6 +84,19 @@ Tab Stash is intentionally lighter than bookmarks.
 - The same URL can still exist in different folders.
 
 You can add links from the Tab Stash page or from the browser right-click menu.
+
+## Tab Atlas
+
+Tab Atlas is for knowledge you want to keep structured instead of temporarily parked.
+
+- The Tab Atlas home shows top-level knowledge topics as a list.
+- Each top-level topic opens into a fully expanded topic tree.
+- Topic depth is capped at three levels.
+- Every topic can have an optional note.
+- Tabs can be attached to any topic level.
+- Every attached tab has a title, URL, and optional note.
+- Topic names must be unique among siblings. Tab titles can repeat.
+- Drag topics and tab sources inside a top-level topic to reorganize the atlas.
 
 ---
 
@@ -112,10 +127,10 @@ tab-hub-backup-YYYY-MM-DD.json
 
 Import modes:
 
-- **Import merge** keeps existing data and adds backup data. Common sites are deduped by URL. Tab Stash folders are merged by folder name. Repeated URLs in the same folder are updated and moved to the latest position.
+- **Import merge** keeps existing data and adds backup data. Common sites are deduped by URL. Tab Stash folders are merged by folder name. Repeated URLs in the same folder are updated and moved to the latest position. Tab Atlas topics are merged by sibling name; repeated URLs in the same topic update the existing source tab.
 - **Replace data** overwrites the current browser's Tab Hub data with the selected backup.
 
-The backup includes feature flags, theme settings, Common sites, Saved for later, Tab Stash data, and metadata.
+The backup includes feature flags, theme settings, Common sites, Saved for later, Tab Stash data, Tab Atlas data, and metadata.
 
 ---
 
@@ -129,6 +144,7 @@ tabOutStore
   -> settings
   -> data.dashboard
   -> data.tabTree
+  -> data.tabAtlas
   -> meta
 ```
 

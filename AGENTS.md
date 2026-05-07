@@ -8,7 +8,7 @@ You're helping the user install or update **Tab Hub**. Your job is not just to l
 
 Before doing anything technical, tell the user what they're about to get:
 
-> **Tab Hub** is a local Chromium extension for Chrome, Edge, and Edge Beta. It replaces the new tab page with a focused dashboard for open tabs, plus a lightweight Tab Stash for temporary links that are not worth turning into bookmarks.
+> **Tab Hub** is a local Chromium extension for Chrome, Edge, and Edge Beta. It replaces the new tab page with a focused dashboard for open tabs, plus a lightweight Tab Stash for temporary links and Tab Atlas for organizing knowledge with tabs.
 >
 > Here's what makes it useful:
 >
@@ -19,6 +19,7 @@ Before doing anything technical, tell the user what they're about to get:
 > - **Click any tab title** to jump to the existing tab, even across windows
 > - **Save for later** keeps individual tabs in a local checklist before closing them
 > - **Tab Stash** stores temporary links in folders without deep bookmark-style nesting
+> - **Tab Atlas** organizes knowledge as top-level topics with nested subtopics, source tabs, and optional notes
 > - **Right-click add to Tab Stash** lets users add the current page to an existing folder or create a folder inline
 > - **Toolbar popup controls** manage Tab Stash, theme, and data transfer
 > - **Import/export** moves Tab Hub data between Chrome, Edge, and Edge Beta with a local JSON backup
@@ -94,8 +95,9 @@ Once the extension is loaded:
 > 7. **Duplicate tabs** show an amber badge and can be cleaned up.
 > 8. **Save for later** uses the bookmark icon to move a tab into the local checklist.
 > 9. **Tab Stash** is available from the top nav or toolbar popup when enabled.
-> 10. **Right-click a webpage** and choose **Add current page to Tab Stash** to add it directly to a folder.
-> 11. **Toolbar popup** lets you toggle Tab Stash, open Tab Stash, switch theme, export data, import/merge data, or replace data.
+> 10. **Tab Atlas** is available from the top nav. Its home shows top-level knowledge topics; click one to view the expanded topic tree.
+> 11. **Right-click a webpage** and choose **Add current page to Tab Stash** to add it directly to a folder.
+> 12. **Toolbar popup** lets you toggle Tab Stash, open Tab Stash, switch theme, export data, import/merge data, or replace data.
 
 ***
 
@@ -106,9 +108,11 @@ Once the extension is loaded:
 - Dashboard is always the new tab page.
 - Tab Stash is optional and enabled by default.
 - Tab Stash structure is intentionally shallow: root -> folders -> tabs.
+- Tab Atlas is optional and enabled by default.
+- Tab Atlas stores multiple top-level knowledge topics; each topic can have notes, nested topics up to three levels, and source tabs with notes.
 - Website icons use the Manifest V3 `_favicon` URL with the `favicon` permission; do not reintroduce third-party favicon aggregators.
 - Data is stored in `chrome.storage.local` under the versioned `tabOutStore` envelope.
-- The store includes `features`, `settings`, `data.dashboard`, `data.tabTree`, and `meta`.
+- The store includes `features`, `settings`, `data.dashboard`, `data.tabTree`, `data.tabAtlas`, and `meta`.
 - Chrome, Edge, and Edge Beta do not automatically share extension local storage; use export/import for browser-to-browser transfer.
 - Export files are local JSON backups named like `tab-hub-backup-YYYY-MM-DD.json`.
 - Import supports **merge** and **replace** modes.

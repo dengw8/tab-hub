@@ -28,13 +28,20 @@ let openTabs = [];
 let favoriteDragId = null;
 let treeDragId = null;
 let treeDragType = null;
+let atlasDragId = null;
+let atlasDragType = null;
+let atlasDragSubtreeHeight = 1;
 let overflowChipSeq = 0;
 let dashboardRenderRun = 0;
 let currentView = 'dashboard';
 let tabTreeSearchQuery = '';
+let tabAtlasHomeSearchQuery = '';
+let tabAtlasDetailSearchQuery = '';
+let currentAtlasTopicId = '';
 const overflowChipCache = new Map();
 const TAB_OUT_STORE_KEY = 'tabOutStore';
 const TAB_OUT_STORE_VERSION = 1;
+const TAB_ATLAS_MAX_DEPTH = 3;
 const THEME_OPTIONS = ['system', 'light', 'dark'];
 
 function normalizeThemePreference(theme) {
@@ -275,6 +282,16 @@ function createDefaultTabTree(createdAt = nowIso()) {
   };
 }
 
+function createDefaultTabAtlas() {
+  return {
+    schemaVersion: 1,
+    maxDepth: TAB_ATLAS_MAX_DEPTH,
+    rootTopicIds: [],
+    topics: {},
+    tabs: {},
+  };
+}
+
 function createDefaultStore(legacy = {}) {
   const createdAt = nowIso();
   return {
@@ -282,6 +299,7 @@ function createDefaultStore(legacy = {}) {
     appVersion: chrome.runtime && chrome.runtime.getManifest ? chrome.runtime.getManifest().version : '1.0.0',
     features: {
       tabTree: { enabled: true },
+      tabAtlas: { enabled: true },
     },
     settings: {
       theme: 'system',
@@ -292,6 +310,7 @@ function createDefaultStore(legacy = {}) {
         deferred: Array.isArray(legacy.deferred) ? legacy.deferred : [],
       },
       tabTree: createDefaultTabTree(createdAt),
+      tabAtlas: createDefaultTabAtlas(),
     },
     meta: {
       createdAt,
@@ -331,6 +350,12 @@ function normalizeStore(raw, legacy = {}) {
   if (typeof store.features.tabTree.enabled !== 'boolean') {
     store.features.tabTree.enabled = true;
   }
+  if (!store.features.tabAtlas || typeof store.features.tabAtlas !== 'object') {
+    store.features.tabAtlas = { enabled: true };
+  }
+  if (typeof store.features.tabAtlas.enabled !== 'boolean') {
+    store.features.tabAtlas.enabled = true;
+  }
   store.settings.theme = normalizeThemePreference(store.settings.theme);
 
   const dashboard = store.data.dashboard && typeof store.data.dashboard === 'object' ? store.data.dashboard : {};
@@ -340,6 +365,7 @@ function normalizeStore(raw, legacy = {}) {
   };
 
   store.data.tabTree = normalizeTabTree(store.data.tabTree);
+  store.data.tabAtlas = normalizeTabAtlas(store.data.tabAtlas);
   store.schemaVersion = TAB_OUT_STORE_VERSION;
   return store;
 }
@@ -699,6 +725,602 @@ function normalizeTabTree(raw) {
     rootId: 'root',
     nodes,
   };
+}
+
+/* ----------------------------------------------------------------
+   TAB Atlas — Knowledge topics and source tabs
+   ---------------------------------------------------------------- */
+
+function createAtlasTopicId() {
+  return createScopedNodeId('topic');
+}
+
+function createAtlasSourceId() {
+  return createScopedNodeId('source');
+}
+
+function createScopedNodeId(prefix) {
+  if (globalThis.crypto && typeof globalThis.crypto.randomUUID === 'function') {
+    return `${prefix}_${globalThis.crypto.randomUUID()}`;
+  }
+  return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function createUniqueAtlasId(collection, preferredId, fallbackFactory) {
+  if (preferredId && !collection[preferredId]) return preferredId;
+  let id = fallbackFactory();
+  while (collection[id]) id = fallbackFactory();
+  return id;
+}
+
+function normalizeAtlasNameKey(name) {
+  return String(name || '').trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+function makeUniqueAtlasTopicName(name, usedNames) {
+  const base = String(name || 'Untitled topic').trim() || 'Untitled topic';
+  let candidate = base;
+  let index = 2;
+  while (usedNames.has(normalizeAtlasNameKey(candidate))) {
+    candidate = `${base} (${index})`;
+    index += 1;
+  }
+  usedNames.add(normalizeAtlasNameKey(candidate));
+  return candidate;
+}
+
+function createAtlasItem(type, id) {
+  return { type, id };
+}
+
+function getRawAtlasTopicItems(topic) {
+  const items = [];
+  const seen = new Set();
+  const add = (type, id) => {
+    if ((type !== 'tab' && type !== 'topic') || typeof id !== 'string' || !id) return;
+    items.push(createAtlasItem(type, id));
+    seen.add(`${type}:${id}`);
+  };
+
+  if (Array.isArray(topic.items) && topic.items.length > 0) {
+    topic.items.forEach(item => {
+      if (!item || typeof item !== 'object') return;
+      add(item.type, item.id);
+    });
+  }
+
+  const tabIds = Array.isArray(topic.tabIds) ? topic.tabIds.filter(tabId => typeof tabId === 'string') : [];
+  const childIds = Array.isArray(topic.children) ? topic.children.filter(childId => typeof childId === 'string') : [];
+  if (items.length === 0) {
+    tabIds.forEach(tabId => add('tab', tabId));
+    childIds.forEach(childId => add('topic', childId));
+  } else {
+    tabIds.forEach(tabId => {
+      if (!seen.has(`tab:${tabId}`)) add('tab', tabId);
+    });
+    childIds.forEach(childId => {
+      if (!seen.has(`topic:${childId}`)) add('topic', childId);
+    });
+  }
+  return items;
+}
+
+function syncAtlasTopicItemIndexes(topic) {
+  const items = Array.isArray(topic.items) ? topic.items : [];
+  topic.items = items.filter(item =>
+    item && (item.type === 'tab' || item.type === 'topic') && typeof item.id === 'string' && item.id
+  );
+  topic.tabIds = topic.items.filter(item => item.type === 'tab').map(item => item.id);
+  topic.children = topic.items.filter(item => item.type === 'topic').map(item => item.id);
+}
+
+function removeAtlasTopicItem(topic, type, id) {
+  if (!topic || !Array.isArray(topic.items)) return;
+  topic.items = topic.items.filter(item => item.type !== type || item.id !== id);
+  syncAtlasTopicItemIndexes(topic);
+}
+
+function insertAtlasTopicItem(topic, type, id, index = -1) {
+  if (!topic) return;
+  if (!Array.isArray(topic.items)) topic.items = [];
+  topic.items = topic.items.filter(item => item.type !== type || item.id !== id);
+  const item = createAtlasItem(type, id);
+  const safeIndex = index < 0 ? topic.items.length : Math.max(0, Math.min(index, topic.items.length));
+  topic.items.splice(safeIndex, 0, item);
+  syncAtlasTopicItemIndexes(topic);
+}
+
+function findAtlasTopicItemIndex(topic, type, id) {
+  if (!topic || !Array.isArray(topic.items)) return -1;
+  return topic.items.findIndex(item => item.type === type && item.id === id);
+}
+
+function normalizeTabAtlas(raw) {
+  const fallback = createDefaultTabAtlas();
+  if (!raw || typeof raw !== 'object') return fallback;
+
+  const rawTopics = raw.topics && typeof raw.topics === 'object' ? raw.topics : {};
+  const rawTabs = raw.tabs && typeof raw.tabs === 'object' ? raw.tabs : {};
+  const topics = {};
+  const tabs = {};
+  const visitedTopics = new Set();
+  const maxDepth = TAB_ATLAS_MAX_DEPTH;
+
+  function cloneTab(rawTabId) {
+    const tab = rawTabs[rawTabId];
+    if (!tab || typeof tab !== 'object' || typeof tab.url !== 'string') return '';
+    const id = createUniqueAtlasId(tabs, rawTabId, createAtlasSourceId);
+    const timestamp = tab.updatedAt || tab.createdAt || nowIso();
+    tabs[id] = {
+      id,
+      title: String(tab.title || tab.name || tab.url || 'Untitled tab'),
+      url: String(tab.url || ''),
+      note: String(tab.note || ''),
+      createdAt: tab.createdAt || timestamp,
+      updatedAt: timestamp,
+    };
+    return id;
+  }
+
+  function cloneTopic(rawTopicId, depth, usedSiblingNames) {
+    if (visitedTopics.has(rawTopicId) || depth > maxDepth) return '';
+    const topic = rawTopics[rawTopicId];
+    if (!topic || typeof topic !== 'object') return '';
+    visitedTopics.add(rawTopicId);
+
+    const id = createUniqueAtlasId(topics, rawTopicId, createAtlasTopicId);
+    const timestamp = topic.updatedAt || topic.createdAt || nowIso();
+    const nextTopic = {
+      id,
+      name: makeUniqueAtlasTopicName(topic.name, usedSiblingNames),
+      note: String(topic.note || ''),
+      children: [],
+      tabIds: [],
+      items: [],
+      expanded: typeof topic.expanded === 'boolean' ? topic.expanded : true,
+      createdAt: topic.createdAt || timestamp,
+      updatedAt: timestamp,
+    };
+    topics[id] = nextTopic;
+
+    const rawItems = getRawAtlasTopicItems(topic);
+    const rawTabIds = rawItems.filter(item => item.type === 'tab').map(item => item.id);
+    const latestTabIdByUrl = new Map();
+    for (const rawTabId of rawTabIds) {
+      const tab = rawTabs[rawTabId];
+      if (!tab || typeof tab.url !== 'string') continue;
+      const key = getComparableAtlasUrl(tab.url);
+      if (key) latestTabIdByUrl.set(key, rawTabId);
+    }
+    const addedTabKeys = new Set();
+
+    const usedChildNames = new Set();
+    for (const item of rawItems) {
+      if (item.type === 'tab') {
+        const tab = rawTabs[item.id];
+        if (!tab || typeof tab.url !== 'string') continue;
+        const key = getComparableAtlasUrl(tab.url);
+        if (!key || addedTabKeys.has(key) || latestTabIdByUrl.get(key) !== item.id) continue;
+        const tabId = cloneTab(item.id);
+        if (tabId) {
+          nextTopic.items.push(createAtlasItem('tab', tabId));
+          addedTabKeys.add(key);
+        }
+      } else if (depth < maxDepth) {
+        const clonedChildId = cloneTopic(item.id, depth + 1, usedChildNames);
+        if (clonedChildId) nextTopic.items.push(createAtlasItem('topic', clonedChildId));
+      }
+    }
+    syncAtlasTopicItemIndexes(nextTopic);
+
+    return id;
+  }
+
+  const rootTopicIds = [];
+  const rawRootIds = Array.isArray(raw.rootTopicIds) ? raw.rootTopicIds.filter(id => typeof id === 'string') : [];
+  const usedRootNames = new Set();
+  for (const rawTopicId of rawRootIds) {
+    const topicId = cloneTopic(rawTopicId, 1, usedRootNames);
+    if (topicId) rootTopicIds.push(topicId);
+  }
+
+  return {
+    schemaVersion: 1,
+    maxDepth,
+    rootTopicIds,
+    topics,
+    tabs,
+  };
+}
+
+async function getTabAtlas() {
+  const store = await getTabOutStore();
+  return normalizeTabAtlas(store.data.tabAtlas);
+}
+
+async function saveTabAtlas(atlas) {
+  await updateTabOutStore(store => {
+    store.data.tabAtlas = normalizeTabAtlas(atlas);
+  });
+}
+
+async function isTabAtlasEnabled() {
+  const store = await getTabOutStore();
+  return !!(store.features && store.features.tabAtlas && store.features.tabAtlas.enabled);
+}
+
+async function setTabAtlasEnabled(enabled) {
+  await updateTabOutStore(store => {
+    store.features.tabAtlas = { ...(store.features.tabAtlas || {}), enabled: !!enabled };
+  });
+}
+
+function getComparableAtlasUrl(url) {
+  try { return normalizeTreeUrl(url); }
+  catch { return String(url || '').trim(); }
+}
+
+function findAtlasParentInfo(atlas, topicId) {
+  if (atlas.rootTopicIds.includes(topicId)) {
+    return { parentId: '', list: atlas.rootTopicIds };
+  }
+  for (const topic of Object.values(atlas.topics)) {
+    if (topic.children.includes(topicId)) {
+      return { parentId: topic.id, list: topic.children };
+    }
+  }
+  return null;
+}
+
+function findAtlasTabParent(atlas, tabId) {
+  return Object.values(atlas.topics).find(topic => topic.tabIds.includes(tabId)) || null;
+}
+
+function getAtlasTopicDepth(atlas, topicId) {
+  function visit(id, depth) {
+    if (id === topicId) return depth;
+    const topic = atlas.topics[id];
+    if (!topic) return 0;
+    for (const childId of topic.children) {
+      const found = visit(childId, depth + 1);
+      if (found) return found;
+    }
+    return 0;
+  }
+
+  for (const rootId of atlas.rootTopicIds) {
+    const found = visit(rootId, 1);
+    if (found) return found;
+  }
+  return 0;
+}
+
+function getAtlasRootTopicId(atlas, topicId) {
+  function visit(id, rootId) {
+    if (id === topicId) return rootId;
+    const topic = atlas.topics[id];
+    if (!topic) return '';
+    for (const childId of topic.children) {
+      const found = visit(childId, rootId);
+      if (found) return found;
+    }
+    return '';
+  }
+
+  for (const rootId of atlas.rootTopicIds) {
+    const found = visit(rootId, rootId);
+    if (found) return found;
+  }
+  return '';
+}
+
+function atlasSiblingTopics(atlas, parentId) {
+  const ids = parentId ? (atlas.topics[parentId] && atlas.topics[parentId].children) || [] : atlas.rootTopicIds;
+  return ids.map(id => atlas.topics[id]).filter(Boolean);
+}
+
+function assertUniqueAtlasTopicName(atlas, parentId, name, exceptId = '') {
+  const key = normalizeAtlasNameKey(name);
+  if (!key) throw new Error('Enter a topic name');
+  const exists = atlasSiblingTopics(atlas, parentId).some(topic =>
+    topic.id !== exceptId && normalizeAtlasNameKey(topic.name) === key
+  );
+  if (exists) throw new Error('Topic name already exists here');
+}
+
+function touchAtlasTopicBranch(atlas, topicId, timestamp = nowIso()) {
+  let currentId = topicId;
+  while (currentId) {
+    const topic = atlas.topics[currentId];
+    if (topic) topic.updatedAt = timestamp;
+    const parent = findAtlasParentInfo(atlas, currentId);
+    currentId = parent && parent.parentId ? parent.parentId : '';
+  }
+}
+
+async function addAtlasTopic(parentId, name, note = '') {
+  const trimmedName = String(name || '').trim();
+  const atlas = await getTabAtlas();
+  const parentTopic = parentId ? atlas.topics[parentId] : null;
+  if (parentId && !parentTopic) throw new Error('Topic not found');
+  const parentDepth = parentId ? getAtlasTopicDepth(atlas, parentId) : 0;
+  if (parentDepth >= atlas.maxDepth) throw new Error('Maximum depth is 3');
+  assertUniqueAtlasTopicName(atlas, parentId, trimmedName);
+
+  const id = createAtlasTopicId();
+  const timestamp = nowIso();
+  atlas.topics[id] = {
+    id,
+    name: trimmedName,
+    note: String(note || '').trim(),
+    children: [],
+    tabIds: [],
+    items: [],
+    expanded: true,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  };
+  if (parentId) {
+    insertAtlasTopicItem(parentTopic, 'topic', id);
+    touchAtlasTopicBranch(atlas, parentId, timestamp);
+  } else {
+    atlas.rootTopicIds.push(id);
+  }
+  await saveTabAtlas(atlas);
+  return id;
+}
+
+async function updateAtlasTopic(topicId, name, note = '') {
+  const trimmedName = String(name || '').trim();
+  const atlas = await getTabAtlas();
+  const topic = atlas.topics[topicId];
+  if (!topic) throw new Error('Topic not found');
+  const parent = findAtlasParentInfo(atlas, topicId);
+  assertUniqueAtlasTopicName(atlas, parent ? parent.parentId : '', trimmedName, topicId);
+  topic.name = trimmedName;
+  topic.note = String(note || '').trim();
+  touchAtlasTopicBranch(atlas, topicId);
+  await saveTabAtlas(atlas);
+}
+
+async function toggleAtlasTopic(topicId) {
+  const atlas = await getTabAtlas();
+  const topic = atlas.topics[topicId];
+  if (!topic) return;
+  topic.expanded = !topic.expanded;
+  topic.updatedAt = nowIso();
+  await saveTabAtlas(atlas);
+}
+
+function collectAtlasTopicSubtreeIds(atlas, topicId, ids = []) {
+  const topic = atlas.topics[topicId];
+  if (!topic) return ids;
+  ids.push(topicId);
+  topic.children.forEach(childId => collectAtlasTopicSubtreeIds(atlas, childId, ids));
+  return ids;
+}
+
+async function deleteAtlasTopic(topicId) {
+  const atlas = await getTabAtlas();
+  const topic = atlas.topics[topicId];
+  if (!topic) throw new Error('Topic not found');
+  const parent = findAtlasParentInfo(atlas, topicId);
+  if (parent) {
+    parent.list.splice(parent.list.indexOf(topicId), 1);
+    if (parent.parentId && atlas.topics[parent.parentId]) {
+      removeAtlasTopicItem(atlas.topics[parent.parentId], 'topic', topicId);
+    }
+  }
+  const subtreeIds = collectAtlasTopicSubtreeIds(atlas, topicId);
+  for (const id of subtreeIds) {
+    const node = atlas.topics[id];
+    if (!node) continue;
+    node.tabIds.forEach(tabId => delete atlas.tabs[tabId]);
+    delete atlas.topics[id];
+  }
+  if (parent && parent.parentId) touchAtlasTopicBranch(atlas, parent.parentId);
+  await saveTabAtlas(atlas);
+}
+
+function displayNameFromAtlasUrl(url) {
+  return displayNameFromTreeUrl(url);
+}
+
+function upsertAtlasTabSource(atlas, topicId, title, normalizedUrl, note = '', timestamp = nowIso()) {
+  const topic = atlas.topics[topicId];
+  if (!topic) throw new Error('Topic not found');
+  const urlKey = getComparableAtlasUrl(normalizedUrl);
+  const sameIds = topic.tabIds.filter(tabId => {
+    const tab = atlas.tabs[tabId];
+    return tab && getComparableAtlasUrl(tab.url) === urlKey;
+  });
+  const trimmedTitle = String(title || '').trim() || displayNameFromAtlasUrl(normalizedUrl);
+  if (sameIds.length > 0) {
+    const keepId = sameIds[sameIds.length - 1];
+    const existing = atlas.tabs[keepId];
+    existing.title = trimmedTitle;
+    existing.url = normalizedUrl;
+    existing.note = String(note || '').trim();
+    existing.updatedAt = timestamp;
+    topic.tabIds = topic.tabIds.filter(tabId => {
+      if (tabId === keepId) return false;
+      if (sameIds.includes(tabId)) {
+        delete atlas.tabs[tabId];
+        return false;
+      }
+      return true;
+    });
+    topic.items = (Array.isArray(topic.items) ? topic.items : []).filter(item =>
+      item.type !== 'tab' || !sameIds.includes(item.id)
+    );
+    insertAtlasTopicItem(topic, 'tab', keepId);
+    touchAtlasTopicBranch(atlas, topicId, timestamp);
+    return existing;
+  }
+
+  const id = createAtlasSourceId();
+  atlas.tabs[id] = {
+    id,
+    title: trimmedTitle,
+    url: normalizedUrl,
+    note: String(note || '').trim(),
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  };
+  insertAtlasTopicItem(topic, 'tab', id);
+  touchAtlasTopicBranch(atlas, topicId, timestamp);
+  return atlas.tabs[id];
+}
+
+async function addAtlasTabSource(topicId, title, url, note = '') {
+  const normalizedUrl = normalizeTreeUrl(url);
+  const atlas = await getTabAtlas();
+  upsertAtlasTabSource(atlas, topicId, title, normalizedUrl, note);
+  await saveTabAtlas(atlas);
+}
+
+async function updateAtlasTabSource(tabId, title, url, note = '') {
+  const normalizedUrl = normalizeTreeUrl(url);
+  const atlas = await getTabAtlas();
+  const tab = atlas.tabs[tabId];
+  if (!tab) throw new Error('Tab source not found');
+  const parent = findAtlasTabParent(atlas, tabId);
+  if (!parent) throw new Error('Topic not found');
+  const urlKey = getComparableAtlasUrl(normalizedUrl);
+  const duplicate = parent.tabIds.some(id => id !== tabId && atlas.tabs[id] && getComparableAtlasUrl(atlas.tabs[id].url) === urlKey);
+  if (duplicate) throw new Error('This URL already exists in this topic');
+  tab.title = String(title || '').trim() || displayNameFromAtlasUrl(normalizedUrl);
+  tab.url = normalizedUrl;
+  tab.note = String(note || '').trim();
+  tab.updatedAt = nowIso();
+  touchAtlasTopicBranch(atlas, parent.id, tab.updatedAt);
+  await saveTabAtlas(atlas);
+}
+
+async function deleteAtlasTabSource(tabId) {
+  const atlas = await getTabAtlas();
+  const parent = findAtlasTabParent(atlas, tabId);
+  if (!parent || !atlas.tabs[tabId]) throw new Error('Tab source not found');
+  parent.tabIds = parent.tabIds.filter(id => id !== tabId);
+  removeAtlasTopicItem(parent, 'tab', tabId);
+  delete atlas.tabs[tabId];
+  touchAtlasTopicBranch(atlas, parent.id);
+  await saveTabAtlas(atlas);
+}
+
+function getAtlasTopicSubtreeHeight(atlas, topicId) {
+  const topic = atlas.topics[topicId];
+  if (!topic || topic.children.length === 0) return 1;
+  return 1 + Math.max(...topic.children.map(childId => getAtlasTopicSubtreeHeight(atlas, childId)));
+}
+
+async function moveAtlasTopic(draggedId, targetType, targetId, position = 'after') {
+  if (!draggedId || !targetId || (targetType === 'topic' && draggedId === targetId)) return false;
+  const atlas = await getTabAtlas();
+  const dragged = atlas.topics[draggedId];
+  if (!dragged || getAtlasRootTopicId(atlas, draggedId) !== currentAtlasTopicId) return false;
+
+  const oldParent = findAtlasParentInfo(atlas, draggedId);
+  if (!oldParent || !oldParent.parentId) return false;
+  const oldParentTopic = atlas.topics[oldParent.parentId];
+  if (!oldParentTopic) return false;
+
+  const draggedSubtreeIds = collectAtlasTopicSubtreeIds(atlas, draggedId);
+  let newParent = null;
+  let newParentId = '';
+  let insertIndex = -1;
+
+  if (position === 'inside') {
+    if (targetType !== 'topic') return false;
+    const target = atlas.topics[targetId];
+    if (!target || getAtlasRootTopicId(atlas, targetId) !== currentAtlasTopicId) return false;
+    const targetDepth = getAtlasTopicDepth(atlas, targetId);
+    if (targetDepth >= atlas.maxDepth) return false;
+    newParent = target;
+    newParentId = targetId;
+    insertIndex = newParent.items.length;
+  } else if (targetType === 'topic') {
+    const target = atlas.topics[targetId];
+    const targetParent = findAtlasParentInfo(atlas, targetId);
+    if (!target || !targetParent || !targetParent.parentId || getAtlasRootTopicId(atlas, targetId) !== currentAtlasTopicId) return false;
+    newParentId = targetParent.parentId;
+    newParent = atlas.topics[newParentId];
+    insertIndex = findAtlasTopicItemIndex(newParent, 'topic', targetId);
+    if (position === 'after') insertIndex += 1;
+  } else if (targetType === 'tab') {
+    const targetParent = findAtlasTabParent(atlas, targetId);
+    if (!targetParent || getAtlasRootTopicId(atlas, targetParent.id) !== currentAtlasTopicId) return false;
+    newParent = targetParent;
+    newParentId = targetParent.id;
+    insertIndex = findAtlasTopicItemIndex(newParent, 'tab', targetId);
+    if (position === 'after') insertIndex += 1;
+  } else {
+    return false;
+  }
+
+  if (!newParent || insertIndex < 0 || draggedSubtreeIds.includes(newParent.id)) return false;
+  const newDepth = getAtlasTopicDepth(atlas, newParentId) + 1;
+  const subtreeHeight = getAtlasTopicSubtreeHeight(atlas, draggedId);
+  if (newDepth + subtreeHeight - 1 > atlas.maxDepth) return false;
+
+  const siblingDuplicate = atlasSiblingTopics(atlas, newParentId).some(topic =>
+    topic.id !== draggedId && normalizeAtlasNameKey(topic.name) === normalizeAtlasNameKey(dragged.name)
+  );
+  if (siblingDuplicate) return false;
+
+  const oldItemIndex = findAtlasTopicItemIndex(oldParentTopic, 'topic', draggedId);
+  if (oldParentTopic === newParent && oldItemIndex >= 0 && oldItemIndex < insertIndex) insertIndex -= 1;
+  removeAtlasTopicItem(oldParentTopic, 'topic', draggedId);
+  insertAtlasTopicItem(newParent, 'topic', draggedId, insertIndex);
+  const timestamp = nowIso();
+  dragged.updatedAt = timestamp;
+  touchAtlasTopicBranch(atlas, newParentId, timestamp);
+  if (oldParent.parentId !== newParentId) touchAtlasTopicBranch(atlas, oldParent.parentId, timestamp);
+  await saveTabAtlas(atlas);
+  return true;
+}
+
+async function moveAtlasTabSource(draggedId, targetType, targetId, position = 'inside') {
+  if (!draggedId || !targetId) return false;
+  const atlas = await getTabAtlas();
+  const tab = atlas.tabs[draggedId];
+  const oldParent = findAtlasTabParent(atlas, draggedId);
+  if (!tab || !oldParent || getAtlasRootTopicId(atlas, oldParent.id) !== currentAtlasTopicId) return false;
+
+  let newParent = null;
+  let insertIndex = -1;
+  if (targetType === 'topic' && position === 'inside') {
+    newParent = atlas.topics[targetId];
+    if (!newParent || getAtlasRootTopicId(atlas, targetId) !== currentAtlasTopicId) return false;
+    insertIndex = newParent.items.length;
+  } else if (targetType === 'topic') {
+    const targetParent = findAtlasParentInfo(atlas, targetId);
+    if (!targetParent || !targetParent.parentId || getAtlasRootTopicId(atlas, targetId) !== currentAtlasTopicId) return false;
+    newParent = atlas.topics[targetParent.parentId];
+    insertIndex = findAtlasTopicItemIndex(newParent, 'topic', targetId);
+    if (position === 'after') insertIndex += 1;
+  } else if (targetType === 'tab') {
+    const targetParent = findAtlasTabParent(atlas, targetId);
+    if (!targetParent || getAtlasRootTopicId(atlas, targetParent.id) !== currentAtlasTopicId) return false;
+    newParent = targetParent;
+    insertIndex = findAtlasTopicItemIndex(newParent, 'tab', targetId);
+    if (position === 'after') insertIndex += 1;
+  }
+
+  if (!newParent || insertIndex < 0) return false;
+  const duplicate = newParent.tabIds.some(id => id !== draggedId && atlas.tabs[id] && getComparableAtlasUrl(atlas.tabs[id].url) === getComparableAtlasUrl(tab.url));
+  if (duplicate) return false;
+
+  const oldIndex = findAtlasTopicItemIndex(oldParent, 'tab', draggedId);
+  if (oldParent.id === newParent.id && oldIndex >= 0 && oldIndex < insertIndex) insertIndex -= 1;
+  removeAtlasTopicItem(oldParent, 'tab', draggedId);
+  insertAtlasTopicItem(newParent, 'tab', draggedId, insertIndex);
+  const timestamp = nowIso();
+  tab.updatedAt = timestamp;
+  touchAtlasTopicBranch(atlas, oldParent.id, timestamp);
+  touchAtlasTopicBranch(atlas, newParent.id, timestamp);
+  await saveTabAtlas(atlas);
+  return true;
 }
 
 async function getTabTree() {
@@ -1305,28 +1927,246 @@ async function renderTabTree() {
   surface.innerHTML = rendered + empty + noResults;
 }
 
+function countAtlasDescendantTopics(atlas, topicId) {
+  const topic = atlas.topics[topicId];
+  if (!topic) return 0;
+  return topic.children.reduce((count, childId) => count + 1 + countAtlasDescendantTopics(atlas, childId), 0);
+}
+
+function countAtlasTopicTabs(atlas, topicId) {
+  const topic = atlas.topics[topicId];
+  if (!topic) return 0;
+  return topic.tabIds.length + topic.children.reduce((count, childId) => count + countAtlasTopicTabs(atlas, childId), 0);
+}
+
+function atlasTopicMatches(topic, query) {
+  if (!query) return true;
+  return `${topic.name || ''} ${topic.note || ''}`.toLowerCase().includes(query);
+}
+
+function atlasTabMatches(tab, query) {
+  if (!query) return true;
+  return `${tab.title || ''} ${tab.url || ''} ${tab.note || ''}`.toLowerCase().includes(query);
+}
+
+function atlasSubtreeMatches(atlas, topicId, query) {
+  const topic = atlas.topics[topicId];
+  if (!topic) return false;
+  if (atlasTopicMatches(topic, query)) return true;
+  if (topic.tabIds.some(tabId => atlas.tabs[tabId] && atlasTabMatches(atlas.tabs[tabId], query))) return true;
+  return topic.children.some(childId => atlasSubtreeMatches(atlas, childId, query));
+}
+
+function renderAtlasHomeItem(atlas, topicId) {
+  const topic = atlas.topics[topicId];
+  if (!topic) return '';
+  const safeId = escapeHtml(topic.id);
+  const safeName = escapeHtml(topic.name);
+  const safeNote = escapeHtml(topic.note || '');
+  const topicCount = countAtlasDescendantTopics(atlas, topicId);
+  const tabCount = countAtlasTopicTabs(atlas, topicId);
+  const updated = timeAgo(topic.updatedAt);
+  return `
+    <div class="atlas-home-item" data-atlas-topic-id="${safeId}">
+      <button class="atlas-home-main" type="button" data-action="open-atlas-topic" data-topic-id="${safeId}">
+        <span class="atlas-home-title">${safeName}</span>
+        <span class="atlas-home-note">${safeNote || 'No note yet.'}</span>
+        <span class="atlas-home-meta">${topicCount} topic${topicCount !== 1 ? 's' : ''} · ${tabCount} tab${tabCount !== 1 ? 's' : ''}${updated ? ` · Updated ${escapeHtml(updated)}` : ''}</span>
+      </button>
+      <div class="atlas-home-actions">
+        <button class="tree-icon-btn" type="button" data-action="edit-atlas-topic" data-topic-id="${safeId}" title="Edit">✎</button>
+        <button class="tree-icon-btn danger" type="button" data-action="delete-atlas-topic" data-topic-id="${safeId}" title="Delete">×</button>
+      </div>
+    </div>`;
+}
+
+async function renderTabAtlasHome() {
+  const home = document.getElementById('tabAtlasHome');
+  const detail = document.getElementById('tabAtlasDetail');
+  const search = document.getElementById('tabAtlasHomeSearch');
+  if (!home || !detail) return;
+  currentAtlasTopicId = '';
+  home.style.display = 'block';
+  detail.style.display = 'none';
+  if (search && search.value !== tabAtlasHomeSearchQuery) search.value = tabAtlasHomeSearchQuery;
+
+  const atlas = await getTabAtlas();
+  const query = tabAtlasHomeSearchQuery.trim().toLowerCase();
+  const topicIds = atlas.rootTopicIds
+    .filter(topicId => atlas.topics[topicId] && atlasTopicMatches(atlas.topics[topicId], query))
+    .sort((a, b) => {
+      if (query) return 0;
+      return new Date(atlas.topics[b].updatedAt || 0) - new Date(atlas.topics[a].updatedAt || 0);
+    });
+
+  const list = document.getElementById('tabAtlasHomeList');
+  if (!list) return;
+  if (topicIds.length === 0 && !query) {
+    list.innerHTML = `
+      <div class="tab-tree-empty">
+        <div class="tab-tree-empty-title">Start your first atlas.</div>
+        <div class="tab-tree-empty-subtitle">Create a top-level topic, then connect the tabs that explain it.</div>
+        <div class="tab-tree-empty-actions">
+          <button class="action-btn primary" type="button" data-action="add-atlas-topic">Add topic</button>
+        </div>
+      </div>`;
+    return;
+  }
+  if (topicIds.length === 0) {
+    list.innerHTML = '<div class="tab-tree-empty"><div class="tab-tree-empty-title">No matching topics.</div></div>';
+    return;
+  }
+  list.innerHTML = topicIds.map(topicId => renderAtlasHomeItem(atlas, topicId)).join('');
+}
+
+function renderAtlasTabSource(atlas, tabId, depth, query) {
+  const tab = atlas.tabs[tabId];
+  if (!tab || (query && !atlasTabMatches(tab, query))) return '';
+  const safeId = escapeHtml(tab.id);
+  const safeTitle = escapeHtml(tab.title || displayNameFromAtlasUrl(tab.url));
+  const safeUrl = escapeHtml(tab.url || '');
+  const safeNote = escapeHtml(tab.note || '');
+  const indent = Math.min(depth * 22, 220);
+  return `
+    <div class="atlas-tab-source" style="--tree-indent:${indent}px" draggable="true" data-atlas-node-type="tab" data-tab-id="${safeId}">
+      <button class="tree-toggle" type="button" data-action="open-atlas-tab" data-tab-id="${safeId}" title="Open tab">↗</button>
+      <button class="atlas-tab-main" type="button" data-action="open-atlas-tab" data-tab-id="${safeId}" title="${safeUrl}">
+        <span class="atlas-tab-title">${safeTitle}</span>
+        <span class="tree-url">${safeUrl}</span>
+        ${safeNote ? `<span class="atlas-note">${safeNote}</span>` : ''}
+      </button>
+      <div class="tree-row-actions">
+        <button class="tree-icon-btn" type="button" data-action="edit-atlas-tab" data-tab-id="${safeId}" title="Edit">✎</button>
+        <button class="tree-icon-btn danger" type="button" data-action="delete-atlas-tab" data-tab-id="${safeId}" title="Delete">×</button>
+      </div>
+    </div>`;
+}
+
+function renderAtlasTopicItem(atlas, item, depth, query) {
+  if (!item || item.type === 'tab') return item ? renderAtlasTabSource(atlas, item.id, depth, query) : '';
+  if (item.type === 'topic') return renderAtlasTopicNode(atlas, item.id, depth + 1, query);
+  return '';
+}
+
+function renderAtlasTopicNode(atlas, topicId, depth, query) {
+  const topic = atlas.topics[topicId];
+  if (!topic) return '';
+  const hasMatch = !query || atlasSubtreeMatches(atlas, topicId, query);
+  if (!hasMatch) return '';
+
+  const safeId = escapeHtml(topic.id);
+  const safeName = escapeHtml(topic.name);
+  const safeNote = escapeHtml(topic.note || '');
+  const indent = Math.min((depth - 1) * 22, 220);
+  const subtreeHeight = getAtlasTopicSubtreeHeight(atlas, topic.id);
+  const showContents = !!query || topic.expanded !== false;
+  const itemHtml = showContents ? topic.items.map(item => renderAtlasTopicItem(atlas, item, depth, query)).join('') : '';
+  const draggable = depth > 1 ? 'true' : 'false';
+  const toggleIcon = showContents ? '▾' : '▸';
+  const toggleTitle = showContents ? 'Collapse topic' : 'Expand topic';
+
+  return `
+    <section class="atlas-topic-node" data-topic-id="${safeId}">
+      <div class="atlas-topic-row" style="--tree-indent:${indent}px" draggable="${draggable}" data-atlas-node-type="topic" data-topic-id="${safeId}" data-topic-depth="${depth}" data-topic-subtree-height="${subtreeHeight}">
+        <button class="tree-toggle" type="button" data-action="toggle-atlas-topic" data-topic-id="${safeId}" title="${toggleTitle}">${toggleIcon}</button>
+        <div class="atlas-topic-main">
+          <div class="atlas-topic-title-row">
+            <span class="atlas-topic-level">L${depth}</span>
+            <span class="atlas-topic-title">${safeName}</span>
+          </div>
+          ${safeNote ? `<div class="atlas-note">${safeNote}</div>` : ''}
+        </div>
+        <div class="tree-row-actions">
+          <button class="tree-icon-btn" type="button" data-action="add-atlas-child" data-topic-id="${safeId}" title="Add">+</button>
+          <button class="tree-icon-btn" type="button" data-action="edit-atlas-topic" data-topic-id="${safeId}" title="Edit">✎</button>
+          <button class="tree-icon-btn danger" type="button" data-action="delete-atlas-topic" data-topic-id="${safeId}" title="Delete">×</button>
+        </div>
+      </div>
+      ${itemHtml ? `<div class="atlas-item-list">${itemHtml}</div>` : ''}
+    </section>`;
+}
+
+async function renderTabAtlasDetail(topicId = currentAtlasTopicId) {
+  const home = document.getElementById('tabAtlasHome');
+  const detail = document.getElementById('tabAtlasDetail');
+  const detailTitle = document.getElementById('tabAtlasDetailTitle');
+  const detailNote = document.getElementById('tabAtlasDetailNote');
+  const surface = document.getElementById('tabAtlasDetailSurface');
+  const search = document.getElementById('tabAtlasDetailSearch');
+  if (!home || !detail || !surface) return;
+
+  const atlas = await getTabAtlas();
+  const topic = atlas.topics[topicId];
+  if (!topic || !atlas.rootTopicIds.includes(topicId)) {
+    await showTabAtlasHomeView({ updateHash: true });
+    return;
+  }
+
+  currentAtlasTopicId = topicId;
+  home.style.display = 'none';
+  detail.style.display = 'block';
+  if (detailTitle) detailTitle.textContent = topic.name;
+  if (detailNote) detailNote.textContent = topic.note || '';
+  if (search && search.value !== tabAtlasDetailSearchQuery) search.value = tabAtlasDetailSearchQuery;
+
+  const query = tabAtlasDetailSearchQuery.trim().toLowerCase();
+  const rendered = renderAtlasTopicNode(atlas, topicId, 1, query);
+  surface.innerHTML = rendered || '<div class="tab-tree-empty"><div class="tab-tree-empty-title">No matching nodes.</div></div>';
+}
+
+async function renderTabAtlas() {
+  if (!await isTabAtlasEnabled()) {
+    const disabled = document.getElementById('tabAtlasDisabled');
+    const shell = document.getElementById('tabAtlasShell');
+    if (disabled) disabled.style.display = 'block';
+    if (shell) shell.style.display = 'none';
+    return;
+  }
+
+  const disabled = document.getElementById('tabAtlasDisabled');
+  const shell = document.getElementById('tabAtlasShell');
+  if (disabled) disabled.style.display = 'none';
+  if (shell) shell.style.display = 'block';
+  if (currentAtlasTopicId) await renderTabAtlasDetail(currentAtlasTopicId);
+  else await renderTabAtlasHome();
+}
+
 async function renderAppShell() {
   const tabTreeEnabled = await isTabTreeEnabled();
+  const tabAtlasEnabled = await isTabAtlasEnabled();
   const treeNav = document.getElementById('tabTreeNavButton');
+  const atlasNav = document.getElementById('tabAtlasNavButton');
   if (treeNav) treeNav.style.display = tabTreeEnabled ? 'inline-flex' : 'none';
+  if (atlasNav) atlasNav.style.display = tabAtlasEnabled ? 'inline-flex' : 'none';
 
   if (!tabTreeEnabled && currentView === 'tab-tree') {
     await showDashboardView({ updateHash: true });
     return;
   }
+  if (!tabAtlasEnabled && currentView === 'tab-atlas') {
+    await showDashboardView({ updateHash: true });
+    return;
+  }
 
   document.querySelectorAll('.app-nav-item').forEach(btn => btn.classList.remove('active'));
-  const activeId = currentView === 'tab-tree' ? 'tabTreeNavButton' : 'dashboardNavButton';
+  const activeId = currentView === 'tab-tree'
+    ? 'tabTreeNavButton'
+    : currentView === 'tab-atlas'
+      ? 'tabAtlasNavButton'
+      : 'dashboardNavButton';
   const active = document.getElementById(activeId);
   if (active) active.classList.add('active');
 }
 
 async function showDashboardView(options = {}) {
   currentView = 'dashboard';
+  currentAtlasTopicId = '';
   const dashboard = document.getElementById('dashboardView');
   const tabTree = document.getElementById('tabTreeView');
+  const tabAtlas = document.getElementById('tabAtlasView');
   if (dashboard) dashboard.style.display = 'block';
   if (tabTree) tabTree.style.display = 'none';
+  if (tabAtlas) tabAtlas.style.display = 'none';
   if (options.updateHash !== false) history.replaceState(null, '', location.pathname);
   await renderAppShell();
   await renderDashboard();
@@ -1339,13 +2179,56 @@ async function showTabTreeView(options = {}) {
     return;
   }
   currentView = 'tab-tree';
+  currentAtlasTopicId = '';
   const dashboard = document.getElementById('dashboardView');
   const tabTree = document.getElementById('tabTreeView');
+  const tabAtlas = document.getElementById('tabAtlasView');
   if (dashboard) dashboard.style.display = 'none';
   if (tabTree) tabTree.style.display = 'block';
+  if (tabAtlas) tabAtlas.style.display = 'none';
   if (options.updateHash !== false) history.replaceState(null, '', '#tab-tree');
   await renderAppShell();
   await renderTabTree();
+}
+
+async function showTabAtlasHomeView(options = {}) {
+  if (!await isTabAtlasEnabled()) {
+    showToast('Tab Atlas is turned off');
+    await showDashboardView({ updateHash: true });
+    return;
+  }
+  currentView = 'tab-atlas';
+  currentAtlasTopicId = '';
+  const dashboard = document.getElementById('dashboardView');
+  const tabTree = document.getElementById('tabTreeView');
+  const tabAtlas = document.getElementById('tabAtlasView');
+  if (dashboard) dashboard.style.display = 'none';
+  if (tabTree) tabTree.style.display = 'none';
+  if (tabAtlas) tabAtlas.style.display = 'block';
+  if (options.updateHash !== false) history.replaceState(null, '', '#tab-atlas');
+  await renderAppShell();
+  await renderTabAtlasHome();
+}
+
+async function showTabAtlasDetailView(topicId, options = {}) {
+  if (!await isTabAtlasEnabled()) {
+    showToast('Tab Atlas is turned off');
+    await showDashboardView({ updateHash: true });
+    return;
+  }
+  currentView = 'tab-atlas';
+  const nextTopicId = topicId || '';
+  if (currentAtlasTopicId !== nextTopicId) tabAtlasDetailSearchQuery = '';
+  currentAtlasTopicId = nextTopicId;
+  const dashboard = document.getElementById('dashboardView');
+  const tabTree = document.getElementById('tabTreeView');
+  const tabAtlas = document.getElementById('tabAtlasView');
+  if (dashboard) dashboard.style.display = 'none';
+  if (tabTree) tabTree.style.display = 'none';
+  if (tabAtlas) tabAtlas.style.display = 'block';
+  if (options.updateHash !== false) history.replaceState(null, '', `#tab-atlas/${encodeURIComponent(currentAtlasTopicId)}`);
+  await renderAppShell();
+  await renderTabAtlasDetail(currentAtlasTopicId);
 }
 
 async function initializeApp() {
@@ -1354,6 +2237,15 @@ async function initializeApp() {
   renderDashboardChrome();
   if (location.hash === '#tab-tree' && await isTabTreeEnabled()) {
     await showTabTreeView({ updateHash: false });
+    return;
+  }
+  if (location.hash === '#tab-atlas' && await isTabAtlasEnabled()) {
+    await showTabAtlasHomeView({ updateHash: false });
+    return;
+  }
+  if (location.hash.startsWith('#tab-atlas/') && await isTabAtlasEnabled()) {
+    const topicId = decodeURIComponent(location.hash.replace('#tab-atlas/', ''));
+    await showTabAtlasDetailView(topicId, { updateHash: false });
     return;
   }
   await showDashboardView({ updateHash: false });
@@ -1521,6 +2413,361 @@ async function saveTreeFolderFromModal() {
     await renderTabTree();
   } catch (err) {
     setTreeTabError(err && err.message ? err.message : 'Could not save folder');
+  }
+}
+
+function setAtlasAddError(message) {
+  const errorEl = document.getElementById('atlasAddError');
+  if (!errorEl) return;
+  errorEl.textContent = message || '';
+  errorEl.style.display = message ? 'block' : 'none';
+}
+
+function getAtlasAddType() {
+  const input = document.getElementById('atlasAddTypeInput');
+  return input && input.value === 'topic' ? 'topic' : 'tab';
+}
+
+function updateAtlasAddModalUi() {
+  const type = getAtlasAddType();
+  const modeInput = document.getElementById('atlasAddModeInput');
+  const tabFields = document.getElementById('atlasAddTabFields');
+  const topicFields = document.getElementById('atlasAddTopicFields');
+  const titleGroup = document.getElementById('atlasAddTitleGroup');
+  const submit = document.getElementById('atlasAddSubmitButton');
+  const title = document.getElementById('atlasAddModalTitle');
+  const tabButton = document.getElementById('atlasAddTabTypeButton');
+  const topicButton = document.getElementById('atlasAddTopicTypeButton');
+  const mode = modeInput ? modeInput.value : 'add';
+
+  if (tabFields) tabFields.style.display = type === 'tab' ? 'block' : 'none';
+  if (topicFields) topicFields.style.display = type === 'topic' ? 'block' : 'none';
+  if (titleGroup) titleGroup.style.display = type === 'tab' && mode !== 'add' ? 'block' : 'none';
+  if (submit) submit.textContent = type === 'tab' && mode === 'add' ? 'Continue' : 'Save';
+  if (title) title.textContent = type === 'topic' ? 'Add topic' : 'Add tab';
+  if (tabButton) tabButton.classList.toggle('active', type === 'tab');
+  if (topicButton) topicButton.classList.toggle('active', type === 'topic');
+}
+
+function selectAtlasAddType(type) {
+  const modal = document.getElementById('atlasAddModal');
+  const typeInput = document.getElementById('atlasAddTypeInput');
+  const modeInput = document.getElementById('atlasAddModeInput');
+  const notice = document.getElementById('atlasAddDepthNotice');
+  const canAddTopic = modal ? modal.dataset.canAddTopic === 'true' : true;
+  if (!typeInput || !modeInput) return;
+
+  if (type === 'topic' && !canAddTopic) {
+    if (notice) notice.style.display = 'block';
+    setAtlasAddError('Maximum topic depth reached');
+    return;
+  }
+
+  typeInput.value = type === 'topic' ? 'topic' : 'tab';
+  modeInput.value = 'add';
+  setAtlasAddError('');
+  updateAtlasAddModalUi();
+  const focusEl = typeInput.value === 'topic'
+    ? document.getElementById('atlasAddTopicNameInput')
+    : document.getElementById('atlasAddUrlInput');
+  if (focusEl) {
+    focusEl.focus();
+    focusEl.select();
+  }
+}
+
+async function openAtlasAddModal(topicId) {
+  const modal = document.getElementById('atlasAddModal');
+  const topicInput = document.getElementById('atlasAddTopicInput');
+  const typeInput = document.getElementById('atlasAddTypeInput');
+  const modeInput = document.getElementById('atlasAddModeInput');
+  const form = document.getElementById('atlasAddForm');
+  const topicButton = document.getElementById('atlasAddTopicTypeButton');
+  const notice = document.getElementById('atlasAddDepthNotice');
+  if (!modal || !topicInput || !typeInput || !modeInput || !form) return;
+
+  const atlas = await getTabAtlas();
+  const topic = atlas.topics[topicId];
+  if (!topic) {
+    showToast('Topic not found');
+    return;
+  }
+
+  const depth = getAtlasTopicDepth(atlas, topicId);
+  const canAddTopic = depth > 0 && depth < atlas.maxDepth;
+  form.reset();
+  topicInput.value = topicId;
+  typeInput.value = 'tab';
+  modeInput.value = 'add';
+  modal.dataset.canAddTopic = canAddTopic ? 'true' : 'false';
+  if (topicButton) {
+    topicButton.classList.toggle('disabled', !canAddTopic);
+    topicButton.setAttribute('aria-disabled', canAddTopic ? 'false' : 'true');
+  }
+  if (notice) notice.style.display = canAddTopic ? 'none' : 'block';
+  setAtlasAddError('');
+  updateAtlasAddModalUi();
+  modal.style.display = 'flex';
+  setTimeout(() => {
+    const urlInput = document.getElementById('atlasAddUrlInput');
+    if (urlInput) {
+      urlInput.focus();
+      urlInput.select();
+    }
+  }, 0);
+}
+
+function closeAtlasAddModal() {
+  const modal = document.getElementById('atlasAddModal');
+  const form = document.getElementById('atlasAddForm');
+  if (!modal || !form) return;
+  modal.style.display = 'none';
+  form.reset();
+  modal.dataset.canAddTopic = 'true';
+  const typeInput = document.getElementById('atlasAddTypeInput');
+  const modeInput = document.getElementById('atlasAddModeInput');
+  if (typeInput) typeInput.value = 'tab';
+  if (modeInput) modeInput.value = 'add';
+  setAtlasAddError('');
+  updateAtlasAddModalUi();
+}
+
+async function prepareAtlasAddTabConfirmation() {
+  const modeInput = document.getElementById('atlasAddModeInput');
+  const urlInput = document.getElementById('atlasAddUrlInput');
+  const titleInput = document.getElementById('atlasAddTitleInput');
+  const submit = document.getElementById('atlasAddSubmitButton');
+  if (!modeInput || !urlInput || !titleInput || !submit) return;
+
+  let normalizedUrl;
+  try {
+    normalizedUrl = normalizeTreeUrl(urlInput.value);
+  } catch (err) {
+    setAtlasAddError(err.message || 'Enter a valid URL');
+    return;
+  }
+
+  setAtlasAddError('');
+  submit.disabled = true;
+  submit.textContent = 'Fetching title...';
+  const result = await fetchTitleWithTemporaryTab(normalizedUrl);
+  urlInput.value = result.url || normalizedUrl;
+  titleInput.value = result.title || displayNameFromAtlasUrl(result.url || normalizedUrl);
+  modeInput.value = 'confirm';
+  updateAtlasAddModalUi();
+  submit.disabled = false;
+  setTimeout(() => {
+    titleInput.focus();
+    titleInput.select();
+  }, 0);
+}
+
+async function saveAtlasAddTabFromModal() {
+  const topicInput = document.getElementById('atlasAddTopicInput');
+  const urlInput = document.getElementById('atlasAddUrlInput');
+  const titleInput = document.getElementById('atlasAddTitleInput');
+  const noteInput = document.getElementById('atlasAddTabNoteInput');
+  if (!topicInput || !urlInput || !titleInput || !noteInput) return;
+
+  try {
+    await addAtlasTabSource(topicInput.value, titleInput.value, urlInput.value, noteInput.value);
+    closeAtlasAddModal();
+    if (currentView === 'tab-atlas') await renderTabAtlasDetail(currentAtlasTopicId);
+    showToast('Tab added');
+  } catch (err) {
+    setAtlasAddError(err && err.message ? err.message : 'Could not save tab');
+  }
+}
+
+async function saveAtlasAddTopicFromModal() {
+  const topicInput = document.getElementById('atlasAddTopicInput');
+  const nameInput = document.getElementById('atlasAddTopicNameInput');
+  const noteInput = document.getElementById('atlasAddTopicNoteInput');
+  if (!topicInput || !nameInput || !noteInput) return;
+
+  try {
+    await addAtlasTopic(topicInput.value, nameInput.value, noteInput.value);
+    closeAtlasAddModal();
+    if (currentView === 'tab-atlas') await renderTabAtlasDetail(currentAtlasTopicId);
+    showToast('Topic added');
+  } catch (err) {
+    setAtlasAddError(err && err.message ? err.message : 'Could not save topic');
+  }
+}
+
+function setAtlasTopicError(message) {
+  const errorEl = document.getElementById('atlasTopicError');
+  if (!errorEl) return;
+  errorEl.textContent = message || '';
+  errorEl.style.display = message ? 'block' : 'none';
+}
+
+function openAtlasTopicModal(mode = 'add', parentId = '', topic = null) {
+  const modal = document.getElementById('atlasTopicModal');
+  const modeInput = document.getElementById('atlasTopicModeInput');
+  const parentInput = document.getElementById('atlasTopicParentInput');
+  const topicInput = document.getElementById('atlasTopicIdInput');
+  const nameInput = document.getElementById('atlasTopicNameInput');
+  const noteInput = document.getElementById('atlasTopicNoteInput');
+  const title = document.getElementById('atlasTopicModalTitle');
+  if (!modal || !modeInput || !parentInput || !topicInput || !nameInput || !noteInput) return;
+  modeInput.value = mode === 'edit' ? 'edit' : 'add';
+  parentInput.value = parentId || '';
+  topicInput.value = topic && topic.id ? topic.id : '';
+  nameInput.value = topic && topic.name ? topic.name : '';
+  noteInput.value = topic && topic.note ? topic.note : '';
+  if (title) title.textContent = mode === 'edit' ? 'Edit topic' : 'Add topic';
+  setAtlasTopicError('');
+  modal.style.display = 'flex';
+  setTimeout(() => {
+    nameInput.focus();
+    nameInput.select();
+  }, 0);
+}
+
+function closeAtlasTopicModal() {
+  const modal = document.getElementById('atlasTopicModal');
+  const form = document.getElementById('atlasTopicForm');
+  if (!modal || !form) return;
+  modal.style.display = 'none';
+  form.reset();
+  setAtlasTopicError('');
+}
+
+async function saveAtlasTopicFromModal() {
+  const modeInput = document.getElementById('atlasTopicModeInput');
+  const parentInput = document.getElementById('atlasTopicParentInput');
+  const topicInput = document.getElementById('atlasTopicIdInput');
+  const nameInput = document.getElementById('atlasTopicNameInput');
+  const noteInput = document.getElementById('atlasTopicNoteInput');
+  if (!modeInput || !parentInput || !topicInput || !nameInput || !noteInput) return;
+
+  try {
+    let createdRootTopicId = '';
+    if (modeInput.value === 'edit') {
+      await updateAtlasTopic(topicInput.value, nameInput.value, noteInput.value);
+      showToast('Topic updated');
+    } else {
+      const id = await addAtlasTopic(parentInput.value || '', nameInput.value, noteInput.value);
+      showToast(parentInput.value ? 'Topic added' : 'Atlas topic added');
+      if (!parentInput.value) createdRootTopicId = id;
+    }
+    closeAtlasTopicModal();
+    if (currentView === 'tab-atlas') {
+      if (createdRootTopicId) await showTabAtlasDetailView(createdRootTopicId);
+      else if (currentAtlasTopicId) await renderTabAtlasDetail(currentAtlasTopicId);
+      else await renderTabAtlasHome();
+    }
+  } catch (err) {
+    setAtlasTopicError(err && err.message ? err.message : 'Could not save topic');
+  }
+}
+
+function setAtlasTabError(message) {
+  const errorEl = document.getElementById('atlasTabError');
+  if (!errorEl) return;
+  errorEl.textContent = message || '';
+  errorEl.style.display = message ? 'block' : 'none';
+}
+
+function updateAtlasTabModalUi() {
+  const modeInput = document.getElementById('atlasTabModeInput');
+  const titleGroup = document.getElementById('atlasTabTitleGroup');
+  const submit = document.getElementById('atlasTabSubmitButton');
+  const title = document.getElementById('atlasTabModalTitle');
+  const mode = modeInput ? modeInput.value : 'add';
+  if (titleGroup) titleGroup.style.display = mode === 'add' ? 'none' : 'block';
+  if (submit) submit.textContent = mode === 'add' ? 'Continue' : 'Save';
+  if (title) title.textContent = mode === 'edit' ? 'Edit tab' : 'Add tab';
+}
+
+function openAtlasTabModal(mode = 'add', topicId = '', tab = null) {
+  const modal = document.getElementById('atlasTabModal');
+  const modeInput = document.getElementById('atlasTabModeInput');
+  const topicInput = document.getElementById('atlasTabTopicInput');
+  const tabInput = document.getElementById('atlasTabIdInput');
+  const urlInput = document.getElementById('atlasTabUrlInput');
+  const titleInput = document.getElementById('atlasTabTitleInput');
+  const noteInput = document.getElementById('atlasTabNoteInput');
+  if (!modal || !modeInput || !topicInput || !tabInput || !urlInput || !titleInput || !noteInput) return;
+  modeInput.value = mode === 'edit' ? 'edit' : 'add';
+  topicInput.value = topicId || '';
+  tabInput.value = tab && tab.id ? tab.id : '';
+  urlInput.value = tab && tab.url ? tab.url : '';
+  titleInput.value = tab && tab.title ? tab.title : '';
+  noteInput.value = tab && tab.note ? tab.note : '';
+  updateAtlasTabModalUi();
+  setAtlasTabError('');
+  modal.style.display = 'flex';
+  setTimeout(() => {
+    urlInput.focus();
+    urlInput.select();
+  }, 0);
+}
+
+function closeAtlasTabModal() {
+  const modal = document.getElementById('atlasTabModal');
+  const form = document.getElementById('atlasTabForm');
+  if (!modal || !form) return;
+  modal.style.display = 'none';
+  form.reset();
+  const modeInput = document.getElementById('atlasTabModeInput');
+  if (modeInput) modeInput.value = 'add';
+  setAtlasTabError('');
+  updateAtlasTabModalUi();
+}
+
+async function prepareAtlasTabConfirmation() {
+  const modeInput = document.getElementById('atlasTabModeInput');
+  const urlInput = document.getElementById('atlasTabUrlInput');
+  const titleInput = document.getElementById('atlasTabTitleInput');
+  const submit = document.getElementById('atlasTabSubmitButton');
+  if (!modeInput || !urlInput || !titleInput || !submit) return;
+
+  let normalizedUrl;
+  try {
+    normalizedUrl = normalizeTreeUrl(urlInput.value);
+  } catch (err) {
+    setAtlasTabError(err.message || 'Enter a valid URL');
+    return;
+  }
+
+  setAtlasTabError('');
+  submit.disabled = true;
+  submit.textContent = 'Fetching title...';
+  const result = await fetchTitleWithTemporaryTab(normalizedUrl);
+  urlInput.value = result.url || normalizedUrl;
+  titleInput.value = result.title || displayNameFromAtlasUrl(result.url || normalizedUrl);
+  modeInput.value = 'confirm';
+  updateAtlasTabModalUi();
+  submit.disabled = false;
+  setTimeout(() => {
+    titleInput.focus();
+    titleInput.select();
+  }, 0);
+}
+
+async function saveAtlasTabFromModal() {
+  const modeInput = document.getElementById('atlasTabModeInput');
+  const topicInput = document.getElementById('atlasTabTopicInput');
+  const tabInput = document.getElementById('atlasTabIdInput');
+  const urlInput = document.getElementById('atlasTabUrlInput');
+  const titleInput = document.getElementById('atlasTabTitleInput');
+  const noteInput = document.getElementById('atlasTabNoteInput');
+  if (!modeInput || !topicInput || !tabInput || !urlInput || !titleInput || !noteInput) return;
+
+  try {
+    if (modeInput.value === 'edit') {
+      await updateAtlasTabSource(tabInput.value, titleInput.value, urlInput.value, noteInput.value);
+      showToast('Tab updated');
+    } else {
+      await addAtlasTabSource(topicInput.value, titleInput.value, urlInput.value, noteInput.value);
+      showToast('Tab added');
+    }
+    closeAtlasTabModal();
+    if (currentView === 'tab-atlas') await renderTabAtlasDetail(currentAtlasTopicId);
+  } catch (err) {
+    setAtlasTabError(err && err.message ? err.message : 'Could not save tab');
   }
 }
 
@@ -2657,11 +3904,18 @@ document.addEventListener('click', async (e) => {
     return;
   }
 
+  if (action === 'show-tab-atlas') {
+    await showTabAtlasHomeView();
+    return;
+  }
+
   if (action === 'open-settings-modal') {
     const modal = document.getElementById('settingsModal');
     const input = document.getElementById('tabTreeEnabledInput');
+    const atlasInput = document.getElementById('tabAtlasEnabledInput');
     const themeSelect = document.getElementById('themePreferenceInput');
     if (input) input.checked = await isTabTreeEnabled();
+    if (atlasInput) atlasInput.checked = await isTabAtlasEnabled();
     if (themeSelect) themeSelect.value = await getThemePreference();
     if (modal) modal.style.display = 'flex';
     return;
@@ -2675,14 +3929,18 @@ document.addEventListener('click', async (e) => {
 
   if (action === 'save-settings') {
     const input = document.getElementById('tabTreeEnabledInput');
+    const atlasInput = document.getElementById('tabAtlasEnabledInput');
     const themeSelect = document.getElementById('themePreferenceInput');
     await setTabTreeEnabled(!!(input && input.checked));
+    await setTabAtlasEnabled(!!(atlasInput && atlasInput.checked));
     await setThemePreference(themeSelect ? themeSelect.value : 'system');
     const modal = document.getElementById('settingsModal');
     if (modal) modal.style.display = 'none';
     await renderAppShell();
     if (currentView === 'tab-tree' && !(input && input.checked)) await showDashboardView();
     else if (currentView === 'tab-tree') await renderTabTree();
+    else if (currentView === 'tab-atlas' && !(atlasInput && atlasInput.checked)) await showDashboardView();
+    else if (currentView === 'tab-atlas') await renderTabAtlas();
     showToast('Settings saved');
     return;
   }
@@ -2691,6 +3949,131 @@ document.addEventListener('click', async (e) => {
     await setTabTreeEnabled(true);
     await showTabTreeView();
     showToast('Tab Stash enabled');
+    return;
+  }
+
+  if (action === 'enable-tab-atlas') {
+    await setTabAtlasEnabled(true);
+    await showTabAtlasHomeView();
+    showToast('Tab Atlas enabled');
+    return;
+  }
+
+  if (action === 'add-atlas-topic') {
+    openAtlasTopicModal('add', actionEl.dataset.parentId || '', null);
+    return;
+  }
+
+  if (action === 'add-atlas-child') {
+    await openAtlasAddModal(actionEl.dataset.topicId || currentAtlasTopicId);
+    return;
+  }
+
+  if (action === 'add-atlas-child-to-current') {
+    if (!currentAtlasTopicId) return;
+    await openAtlasAddModal(currentAtlasTopicId);
+    return;
+  }
+
+  if (action === 'select-atlas-add-type') {
+    selectAtlasAddType(actionEl.dataset.addType || 'tab');
+    return;
+  }
+
+  if (action === 'close-atlas-add-modal') {
+    closeAtlasAddModal();
+    return;
+  }
+
+  if (action === 'open-atlas-topic') {
+    await showTabAtlasDetailView(actionEl.dataset.topicId);
+    return;
+  }
+
+  if (action === 'toggle-atlas-topic') {
+    await toggleAtlasTopic(actionEl.dataset.topicId);
+    await renderTabAtlasDetail(currentAtlasTopicId);
+    return;
+  }
+
+  if (action === 'edit-current-atlas-topic') {
+    const atlas = await getTabAtlas();
+    const topic = atlas.topics[currentAtlasTopicId];
+    if (topic) openAtlasTopicModal('edit', '', topic);
+    return;
+  }
+
+  if (action === 'edit-atlas-topic') {
+    const atlas = await getTabAtlas();
+    const topic = atlas.topics[actionEl.dataset.topicId];
+    if (topic) {
+      const parent = findAtlasParentInfo(atlas, topic.id);
+      openAtlasTopicModal('edit', parent ? parent.parentId : '', topic);
+    }
+    return;
+  }
+
+  if (action === 'delete-atlas-topic') {
+    const topicId = actionEl.dataset.topicId;
+    const atlas = await getTabAtlas();
+    const topic = atlas.topics[topicId];
+    if (!topic) return;
+    const ok = window.confirm(`Delete "${topic.name}" and all of its subtopics and tabs?`);
+    if (!ok) return;
+    try {
+      const wasCurrent = topicId === currentAtlasTopicId;
+      await deleteAtlasTopic(topicId);
+      if (wasCurrent) await showTabAtlasHomeView();
+      else if (currentAtlasTopicId) await renderTabAtlasDetail(currentAtlasTopicId);
+      else await renderTabAtlasHome();
+      showToast('Topic deleted');
+    } catch (err) {
+      console.warn('[tab-out] Failed to delete atlas topic:', err);
+      showToast('Could not delete topic');
+    }
+    return;
+  }
+
+  if (action === 'open-atlas-tab') {
+    const atlas = await getTabAtlas();
+    const tab = atlas.tabs[actionEl.dataset.tabId];
+    if (tab) await openTreeTab(tab.url);
+    return;
+  }
+
+  if (action === 'edit-atlas-tab') {
+    const atlas = await getTabAtlas();
+    const tab = atlas.tabs[actionEl.dataset.tabId];
+    const parent = tab ? findAtlasTabParent(atlas, tab.id) : null;
+    if (tab && parent) openAtlasTabModal('edit', parent.id, tab);
+    return;
+  }
+
+  if (action === 'delete-atlas-tab') {
+    const tabId = actionEl.dataset.tabId;
+    const atlas = await getTabAtlas();
+    const tab = atlas.tabs[tabId];
+    if (!tab) return;
+    const ok = window.confirm(`Delete "${tab.title || tab.url}"?`);
+    if (!ok) return;
+    try {
+      await deleteAtlasTabSource(tabId);
+      await renderTabAtlasDetail(currentAtlasTopicId);
+      showToast('Tab deleted');
+    } catch (err) {
+      console.warn('[tab-out] Failed to delete atlas tab:', err);
+      showToast('Could not delete tab');
+    }
+    return;
+  }
+
+  if (action === 'close-atlas-topic-modal') {
+    closeAtlasTopicModal();
+    return;
+  }
+
+  if (action === 'close-atlas-tab-modal') {
+    closeAtlasTabModal();
     return;
   }
 
@@ -3086,6 +4469,18 @@ document.addEventListener('input', async (e) => {
     return;
   }
 
+  if (e.target.id === 'tabAtlasHomeSearch') {
+    tabAtlasHomeSearchQuery = e.target.value.trim().toLowerCase();
+    await renderTabAtlasHome();
+    return;
+  }
+
+  if (e.target.id === 'tabAtlasDetailSearch') {
+    tabAtlasDetailSearchQuery = e.target.value.trim().toLowerCase();
+    await renderTabAtlasDetail(currentAtlasTopicId);
+    return;
+  }
+
   if (e.target.id !== 'archiveSearch') return;
 
   const q = e.target.value.trim().toLowerCase();
@@ -3115,6 +4510,39 @@ document.addEventListener('input', async (e) => {
 });
 
 document.addEventListener('submit', async (e) => {
+  if (e.target.id === 'atlasAddForm') {
+    e.preventDefault();
+    const type = getAtlasAddType();
+    const modeInput = document.getElementById('atlasAddModeInput');
+    if (type === 'topic') {
+      await saveAtlasAddTopicFromModal();
+      return;
+    }
+    if (modeInput && modeInput.value === 'add') {
+      await prepareAtlasAddTabConfirmation();
+      return;
+    }
+    await saveAtlasAddTabFromModal();
+    return;
+  }
+
+  if (e.target.id === 'atlasTopicForm') {
+    e.preventDefault();
+    await saveAtlasTopicFromModal();
+    return;
+  }
+
+  if (e.target.id === 'atlasTabForm') {
+    e.preventDefault();
+    const modeInput = document.getElementById('atlasTabModeInput');
+    if (modeInput && modeInput.value === 'add') {
+      await prepareAtlasTabConfirmation();
+      return;
+    }
+    await saveAtlasTabFromModal();
+    return;
+  }
+
   if (e.target.id === 'treeTabForm') {
     e.preventDefault();
     const modeInput = document.getElementById('treeTabModeInput');
@@ -3165,15 +4593,24 @@ document.addEventListener('keydown', (e) => {
   const favoriteModal = document.getElementById('favoriteModal');
   const settingsModal = document.getElementById('settingsModal');
   const tabModal = document.getElementById('treeTabModal');
+  const atlasAddModal = document.getElementById('atlasAddModal');
+  const atlasTopicModal = document.getElementById('atlasTopicModal');
+  const atlasTabModal = document.getElementById('atlasTabModal');
   if (favoriteModal && favoriteModal.style.display !== 'none') closeFavoriteModal();
   if (settingsModal && settingsModal.style.display !== 'none') settingsModal.style.display = 'none';
   if (tabModal && tabModal.style.display !== 'none') closeTreeTabModal();
+  if (atlasAddModal && atlasAddModal.style.display !== 'none') closeAtlasAddModal();
+  if (atlasTopicModal && atlasTopicModal.style.display !== 'none') closeAtlasTopicModal();
+  if (atlasTabModal && atlasTabModal.style.display !== 'none') closeAtlasTabModal();
 });
 
 document.addEventListener('click', (e) => {
   if (e.target && e.target.id === 'favoriteModal') closeFavoriteModal();
   if (e.target && e.target.id === 'settingsModal') e.target.style.display = 'none';
   if (e.target && e.target.id === 'treeTabModal') closeTreeTabModal();
+  if (e.target && e.target.id === 'atlasAddModal') closeAtlasAddModal();
+  if (e.target && e.target.id === 'atlasTopicModal') closeAtlasTopicModal();
+  if (e.target && e.target.id === 'atlasTabModal') closeAtlasTabModal();
 });
 
 document.addEventListener('error', (e) => {
@@ -3186,9 +4623,40 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName !== 'local' || !changes[TAB_OUT_STORE_KEY]) return;
   const store = normalizeStore(changes[TAB_OUT_STORE_KEY].newValue);
   applyThemePreference(store.settings && store.settings.theme);
+  void (async () => {
+    await renderAppShell();
+    if (currentView === 'tab-tree') await renderTabTree();
+    else if (currentView === 'tab-atlas') await renderTabAtlas();
+  })();
 });
 
 document.addEventListener('dragstart', (e) => {
+  const atlasTopicRow = e.target.closest('.atlas-topic-row');
+  if (atlasTopicRow && atlasTopicRow.getAttribute('draggable') === 'true') {
+    atlasDragId = atlasTopicRow.dataset.topicId || null;
+    atlasDragType = 'topic';
+    atlasDragSubtreeHeight = Math.max(1, Number(atlasTopicRow.dataset.topicSubtreeHeight || 1));
+    atlasTopicRow.classList.add('dragging');
+    if (e.dataTransfer) {
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', atlasDragId || '');
+    }
+    return;
+  }
+
+  const atlasTabRow = e.target.closest('.atlas-tab-source');
+  if (atlasTabRow && atlasTabRow.getAttribute('draggable') === 'true') {
+    atlasDragId = atlasTabRow.dataset.tabId || null;
+    atlasDragType = 'tab';
+    atlasDragSubtreeHeight = 1;
+    atlasTabRow.classList.add('dragging');
+    if (e.dataTransfer) {
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', atlasDragId || '');
+    }
+    return;
+  }
+
   const treeRow = e.target.closest('.tab-tree-row');
   if (treeRow && treeRow.getAttribute('draggable') === 'true') {
     treeDragId = treeRow.dataset.nodeId || null;
@@ -3213,6 +4681,54 @@ document.addEventListener('dragstart', (e) => {
 });
 
 document.addEventListener('dragover', (e) => {
+  const atlasRow = e.target.closest('.atlas-topic-row, .atlas-tab-source');
+  if (atlasRow && atlasDragId) {
+    const targetType = atlasRow.classList.contains('atlas-topic-row') ? 'topic' : 'tab';
+    const targetId = targetType === 'topic' ? atlasRow.dataset.topicId : atlasRow.dataset.tabId;
+    if (!targetId || targetId === atlasDragId) return;
+
+    if (atlasDragType === 'topic' && targetType !== 'topic' && targetType !== 'tab') return;
+    if (atlasDragType === 'tab' && targetType !== 'topic' && targetType !== 'tab') return;
+
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+    document.querySelectorAll('.atlas-topic-row.drop-before, .atlas-topic-row.drop-after, .atlas-topic-row.drop-inside, .atlas-tab-source.drop-before, .atlas-tab-source.drop-after, .atlas-tab-source.drop-inside').forEach(el => {
+      if (el !== atlasRow) el.classList.remove('drop-before', 'drop-after', 'drop-inside');
+    });
+
+    const rect = atlasRow.getBoundingClientRect();
+    const y = e.clientY - rect.top;
+    const x = e.clientX - rect.left;
+    let position = 'inside';
+    if (atlasDragType === 'topic') {
+      if (targetType === 'topic') {
+        const targetDepth = Number(atlasRow.dataset.topicDepth || 0);
+        const canNestInTarget = targetDepth + atlasDragSubtreeHeight <= TAB_ATLAS_MAX_DEPTH;
+        const rootInside = targetDepth <= 1 && canNestInTarget;
+        const insideThreshold = Math.min(rect.width * 0.3, 104 + Math.max(0, targetDepth - 1) * 22);
+        const horizontalInside = canNestInTarget && x > insideThreshold;
+        const verticalInside = canNestInTarget && y >= rect.height * 0.24 && y <= rect.height * 0.76;
+        if (rootInside || horizontalInside || verticalInside) position = 'inside';
+        else position = y < rect.height * 0.5 ? 'before' : 'after';
+      } else {
+        position = y < rect.height * 0.5 ? 'before' : 'after';
+      }
+    } else if (targetType === 'topic') {
+      const targetDepth = Number(atlasRow.dataset.topicDepth || 0);
+      const rootInside = targetDepth <= 1;
+      if (rootInside) position = 'inside';
+      else if (y < rect.height * 0.28) position = 'before';
+      else if (y > rect.height * 0.72) position = 'after';
+      else position = 'inside';
+    } else if (targetType === 'tab') {
+      position = y < rect.height * 0.5 ? 'before' : 'after';
+    }
+    atlasRow.dataset.dropPosition = position;
+    atlasRow.classList.remove('drop-before', 'drop-after', 'drop-inside');
+    atlasRow.classList.add(`drop-${position}`);
+    return;
+  }
+
   const treeRow = e.target.closest('.tab-tree-row');
   if (treeRow && treeDragId && treeRow.dataset.nodeId !== treeDragId) {
     document.querySelectorAll('.tab-tree-row.drop-before, .tab-tree-row.drop-after, .tab-tree-row.drop-inside').forEach(el => {
@@ -3252,6 +4768,12 @@ document.addEventListener('dragover', (e) => {
 });
 
 document.addEventListener('dragleave', (e) => {
+  const atlasRow = e.target.closest('.atlas-topic-row, .atlas-tab-source');
+  if (atlasRow) {
+    const related = e.relatedTarget && e.relatedTarget.closest ? e.relatedTarget.closest('.atlas-topic-row, .atlas-tab-source') : null;
+    if (related !== atlasRow) atlasRow.classList.remove('drop-before', 'drop-after', 'drop-inside');
+  }
+
   const treeRow = e.target.closest('.tab-tree-row');
   if (treeRow) {
     const related = e.relatedTarget && e.relatedTarget.closest ? e.relatedTarget.closest('.tab-tree-row') : null;
@@ -3265,6 +4787,14 @@ document.addEventListener('dragleave', (e) => {
 });
 
 document.addEventListener('dragend', () => {
+  atlasDragId = null;
+  atlasDragType = null;
+  atlasDragSubtreeHeight = 1;
+  document.querySelectorAll('.atlas-topic-row, .atlas-tab-source').forEach(row => {
+    row.classList.remove('dragging', 'drop-before', 'drop-after', 'drop-inside');
+    delete row.dataset.dropPosition;
+  });
+
   treeDragId = null;
   treeDragType = null;
   document.querySelectorAll('.tab-tree-row').forEach(row => {
@@ -3279,6 +4809,34 @@ document.addEventListener('dragend', () => {
 });
 
 document.addEventListener('drop', async (e) => {
+  const atlasRow = e.target.closest('.atlas-topic-row, .atlas-tab-source');
+  if (atlasRow && atlasDragId) {
+    e.preventDefault();
+    const targetType = atlasRow.classList.contains('atlas-topic-row') ? 'topic' : 'tab';
+    const targetId = targetType === 'topic' ? atlasRow.dataset.topicId : atlasRow.dataset.tabId;
+    const position = atlasRow.dataset.dropPosition || 'inside';
+    let moved = false;
+    if (atlasDragType === 'topic') {
+      moved = await moveAtlasTopic(atlasDragId, targetType, targetId, position);
+    } else if (atlasDragType === 'tab') {
+      moved = await moveAtlasTabSource(atlasDragId, targetType, targetId, position);
+    }
+    atlasDragId = null;
+    atlasDragType = null;
+    atlasDragSubtreeHeight = 1;
+    document.querySelectorAll('.atlas-topic-row, .atlas-tab-source').forEach(row => {
+      row.classList.remove('dragging', 'drop-before', 'drop-after', 'drop-inside');
+      delete row.dataset.dropPosition;
+    });
+    if (!moved) {
+      showToast('Cannot move there');
+      return;
+    }
+    await renderTabAtlasDetail(currentAtlasTopicId);
+    showToast('Atlas updated');
+    return;
+  }
+
   const treeRow = e.target.closest('.tab-tree-row');
   if (treeRow && treeDragId) {
     e.preventDefault();

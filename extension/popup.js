@@ -4,6 +4,7 @@ const TAB_OUT_STORE_KEY = 'tabOutStore';
 const TAB_OUT_STORE_VERSION = 1;
 const EXPORT_FORMAT = 'tab-hub-backup';
 const EXPORT_FORMAT_VERSION = 1;
+const TAB_ATLAS_MAX_DEPTH = 3;
 const THEME_OPTIONS = ['system', 'light', 'dark'];
 
 let pendingImportMode = 'merge';
@@ -59,6 +60,16 @@ function createDefaultTabTree(createdAt = nowIso()) {
   };
 }
 
+function createDefaultTabAtlas() {
+  return {
+    schemaVersion: 1,
+    maxDepth: TAB_ATLAS_MAX_DEPTH,
+    rootTopicIds: [],
+    topics: {},
+    tabs: {},
+  };
+}
+
 function createDefaultStore(legacy = {}) {
   const createdAt = nowIso();
   return {
@@ -66,6 +77,7 @@ function createDefaultStore(legacy = {}) {
     appVersion: chrome.runtime && chrome.runtime.getManifest ? chrome.runtime.getManifest().version : '1.0.0',
     features: {
       tabTree: { enabled: true },
+      tabAtlas: { enabled: true },
     },
     settings: {
       theme: 'system',
@@ -76,6 +88,7 @@ function createDefaultStore(legacy = {}) {
         deferred: Array.isArray(legacy.deferred) ? legacy.deferred : [],
       },
       tabTree: createDefaultTabTree(createdAt),
+      tabAtlas: createDefaultTabAtlas(),
     },
     meta: {
       createdAt,
@@ -139,6 +152,178 @@ function normalizeTabTree(raw) {
   };
 }
 
+function normalizeAtlasNameKey(name) {
+  return String(name || '').trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+function makeUniqueAtlasTopicName(name, usedNames) {
+  const base = String(name || 'Untitled topic').trim() || 'Untitled topic';
+  let candidate = base;
+  let index = 2;
+  while (usedNames.has(normalizeAtlasNameKey(candidate))) {
+    candidate = `${base} (${index})`;
+    index += 1;
+  }
+  usedNames.add(normalizeAtlasNameKey(candidate));
+  return candidate;
+}
+
+function createAtlasItem(type, id) {
+  return { type, id };
+}
+
+function getRawAtlasTopicItems(topic) {
+  const items = [];
+  const seen = new Set();
+  const add = (type, id) => {
+    if ((type !== 'tab' && type !== 'topic') || typeof id !== 'string' || !id) return;
+    items.push(createAtlasItem(type, id));
+    seen.add(`${type}:${id}`);
+  };
+
+  if (Array.isArray(topic.items) && topic.items.length > 0) {
+    topic.items.forEach(item => {
+      if (!item || typeof item !== 'object') return;
+      add(item.type, item.id);
+    });
+  }
+
+  const tabIds = Array.isArray(topic.tabIds) ? topic.tabIds.filter(tabId => typeof tabId === 'string') : [];
+  const childIds = Array.isArray(topic.children) ? topic.children.filter(childId => typeof childId === 'string') : [];
+  if (items.length === 0) {
+    tabIds.forEach(tabId => add('tab', tabId));
+    childIds.forEach(childId => add('topic', childId));
+  } else {
+    tabIds.forEach(tabId => {
+      if (!seen.has(`tab:${tabId}`)) add('tab', tabId);
+    });
+    childIds.forEach(childId => {
+      if (!seen.has(`topic:${childId}`)) add('topic', childId);
+    });
+  }
+  return items;
+}
+
+function syncAtlasTopicItemIndexes(topic) {
+  const items = Array.isArray(topic.items) ? topic.items : [];
+  topic.items = items.filter(item =>
+    item && (item.type === 'tab' || item.type === 'topic') && typeof item.id === 'string' && item.id
+  );
+  topic.tabIds = topic.items.filter(item => item.type === 'tab').map(item => item.id);
+  topic.children = topic.items.filter(item => item.type === 'topic').map(item => item.id);
+}
+
+function insertAtlasTopicItem(topic, type, id) {
+  if (!topic) return;
+  if (!Array.isArray(topic.items)) topic.items = [];
+  topic.items = topic.items.filter(item => item.type !== type || item.id !== id);
+  topic.items.push(createAtlasItem(type, id));
+  syncAtlasTopicItemIndexes(topic);
+}
+
+function createUniqueAtlasId(collection, prefix, preferredId) {
+  if (preferredId && !collection[preferredId]) return preferredId;
+  let id = createScopedId(prefix);
+  while (collection[id]) id = createScopedId(prefix);
+  return id;
+}
+
+function normalizeTabAtlas(raw) {
+  const fallback = createDefaultTabAtlas();
+  if (!raw || typeof raw !== 'object') return fallback;
+
+  const rawTopics = raw.topics && typeof raw.topics === 'object' ? raw.topics : {};
+  const rawTabs = raw.tabs && typeof raw.tabs === 'object' ? raw.tabs : {};
+  const topics = {};
+  const tabs = {};
+  const visitedTopics = new Set();
+  const maxDepth = TAB_ATLAS_MAX_DEPTH;
+
+  function cloneTab(rawTabId) {
+    const tab = rawTabs[rawTabId];
+    if (!tab || typeof tab !== 'object' || typeof tab.url !== 'string') return '';
+    const id = createUniqueAtlasId(tabs, 'source', rawTabId);
+    const timestamp = tab.updatedAt || tab.createdAt || nowIso();
+    tabs[id] = {
+      id,
+      title: String(tab.title || tab.name || tab.url || 'Untitled tab'),
+      url: String(tab.url || ''),
+      note: String(tab.note || ''),
+      createdAt: tab.createdAt || timestamp,
+      updatedAt: timestamp,
+    };
+    return id;
+  }
+
+  function cloneTopic(rawTopicId, depth, usedSiblingNames) {
+    if (visitedTopics.has(rawTopicId) || depth > maxDepth) return '';
+    const topic = rawTopics[rawTopicId];
+    if (!topic || typeof topic !== 'object') return '';
+    visitedTopics.add(rawTopicId);
+
+    const id = createUniqueAtlasId(topics, 'topic', rawTopicId);
+    const timestamp = topic.updatedAt || topic.createdAt || nowIso();
+    topics[id] = {
+      id,
+      name: makeUniqueAtlasTopicName(topic.name, usedSiblingNames),
+      note: String(topic.note || ''),
+      children: [],
+      tabIds: [],
+      items: [],
+      expanded: typeof topic.expanded === 'boolean' ? topic.expanded : true,
+      createdAt: topic.createdAt || timestamp,
+      updatedAt: timestamp,
+    };
+
+    const rawItems = getRawAtlasTopicItems(topic);
+    const tabIds = rawItems.filter(item => item.type === 'tab').map(item => item.id);
+    const latestByUrl = new Map();
+    for (const tabId of tabIds) {
+      const tab = rawTabs[tabId];
+      if (!tab || typeof tab.url !== 'string') continue;
+      const key = normalizeImportUrlKey(tab.url);
+      if (key) latestByUrl.set(key, tabId);
+    }
+    const addedKeys = new Set();
+
+    const usedChildNames = new Set();
+    for (const item of rawItems) {
+      if (item.type === 'tab') {
+        const tab = rawTabs[item.id];
+        if (!tab || typeof tab.url !== 'string') continue;
+        const key = normalizeImportUrlKey(tab.url);
+        if (!key || addedKeys.has(key) || latestByUrl.get(key) !== item.id) continue;
+        const cloned = cloneTab(item.id);
+        if (cloned) {
+          topics[id].items.push(createAtlasItem('tab', cloned));
+          addedKeys.add(key);
+        }
+      } else if (depth < maxDepth) {
+        const cloned = cloneTopic(item.id, depth + 1, usedChildNames);
+        if (cloned) topics[id].items.push(createAtlasItem('topic', cloned));
+      }
+    }
+    syncAtlasTopicItemIndexes(topics[id]);
+    return id;
+  }
+
+  const rootTopicIds = [];
+  const usedRootNames = new Set();
+  const roots = Array.isArray(raw.rootTopicIds) ? raw.rootTopicIds.filter(id => typeof id === 'string') : [];
+  for (const rootId of roots) {
+    const cloned = cloneTopic(rootId, 1, usedRootNames);
+    if (cloned) rootTopicIds.push(cloned);
+  }
+
+  return {
+    schemaVersion: 1,
+    maxDepth,
+    rootTopicIds,
+    topics,
+    tabs,
+  };
+}
+
 function normalizeStore(raw, legacy = {}) {
   const fallback = createDefaultStore(legacy);
   if (!raw || typeof raw !== 'object') return fallback;
@@ -170,6 +355,12 @@ function normalizeStore(raw, legacy = {}) {
   if (typeof store.features.tabTree.enabled !== 'boolean') {
     store.features.tabTree.enabled = true;
   }
+  if (!store.features.tabAtlas || typeof store.features.tabAtlas !== 'object') {
+    store.features.tabAtlas = { enabled: true };
+  }
+  if (typeof store.features.tabAtlas.enabled !== 'boolean') {
+    store.features.tabAtlas.enabled = true;
+  }
   store.settings.theme = normalizeThemePreference(store.settings.theme);
 
   const dashboard = store.data.dashboard && typeof store.data.dashboard === 'object' ? store.data.dashboard : {};
@@ -178,6 +369,7 @@ function normalizeStore(raw, legacy = {}) {
     deferred: Array.isArray(dashboard.deferred) ? dashboard.deferred : fallback.data.dashboard.deferred,
   };
   store.data.tabTree = normalizeTabTree(store.data.tabTree);
+  store.data.tabAtlas = normalizeTabAtlas(store.data.tabAtlas);
   store.schemaVersion = TAB_OUT_STORE_VERSION;
   return store;
 }
@@ -226,17 +418,22 @@ function countStoreData(store) {
   const normalized = normalizeStore(store);
   const dashboard = normalized.data.dashboard || {};
   const tree = normalized.data.tabTree || createDefaultTabTree();
+  const atlas = normalized.data.tabAtlas || createDefaultTabAtlas();
   const folders = tree.nodes.root.children.filter(id => tree.nodes[id] && tree.nodes[id].type === 'folder');
   const treeTabs = folders.reduce((count, folderId) => {
     const folder = tree.nodes[folderId];
     return count + folder.children.filter(childId => tree.nodes[childId] && tree.nodes[childId].type === 'tab').length;
   }, 0);
+  const atlasTopics = Object.keys(atlas.topics || {}).length;
+  const atlasTabs = Object.keys(atlas.tabs || {}).length;
 
   return {
     favorites: dashboard.favorites.length,
     savedTabs: dashboard.deferred.filter(item => item && !item.dismissed).length,
     folders: folders.length,
     treeTabs,
+    atlasTopics,
+    atlasTabs,
   };
 }
 
@@ -420,6 +617,152 @@ function mergeTabTree(targetStore, importedStore, stats) {
   targetStore.data.tabTree = normalizeTabTree(targetTree);
 }
 
+function upsertImportedAtlasTab(atlas, targetTopic, importedTab, stats) {
+  if (!importedTab || typeof importedTab.url !== 'string') return;
+  const urlKey = normalizeImportUrlKey(importedTab.url);
+  if (!urlKey) return;
+
+  const sameIds = targetTopic.tabIds.filter(tabId => {
+    const tab = atlas.tabs[tabId];
+    return tab && normalizeImportUrlKey(tab.url) === urlKey;
+  });
+  const timestamp = importedTab.updatedAt || nowIso();
+  const title = String(importedTab.title || importedTab.name || importedTab.url || 'Untitled tab');
+
+  if (sameIds.length > 0) {
+    const keepId = sameIds[sameIds.length - 1];
+    const existing = atlas.tabs[keepId];
+    existing.title = title;
+    existing.url = String(importedTab.url);
+    existing.note = String(importedTab.note || '');
+    existing.updatedAt = timestamp;
+    targetTopic.tabIds = targetTopic.tabIds.filter(tabId => {
+      if (tabId === keepId) return false;
+      if (sameIds.includes(tabId)) {
+        delete atlas.tabs[tabId];
+        return false;
+      }
+      return true;
+    });
+    targetTopic.items = (Array.isArray(targetTopic.items) ? targetTopic.items : []).filter(item =>
+      item.type !== 'tab' || !sameIds.includes(item.id)
+    );
+    insertAtlasTopicItem(targetTopic, 'tab', keepId);
+    targetTopic.updatedAt = timestamp;
+    stats.atlasTabsUpdated += 1;
+    return;
+  }
+
+  const id = createUniqueAtlasId(atlas.tabs, 'source', importedTab.id);
+  atlas.tabs[id] = {
+    id,
+    title,
+    url: String(importedTab.url),
+    note: String(importedTab.note || ''),
+    createdAt: importedTab.createdAt || timestamp,
+    updatedAt: timestamp,
+  };
+  insertAtlasTopicItem(targetTopic, 'tab', id);
+  targetTopic.updatedAt = timestamp;
+  stats.atlasTabsAdded += 1;
+}
+
+function mergeAtlasTopicChildren(targetAtlas, importedAtlas, targetTopic, importedTopic, stats) {
+  const childByName = new Map();
+  for (const childId of targetTopic.children) {
+    const child = targetAtlas.topics[childId];
+    if (!child) continue;
+    const key = normalizeNameKey(child.name);
+    if (key && !childByName.has(key)) childByName.set(key, childId);
+  }
+
+  const importedItems = Array.isArray(importedTopic.items) && importedTopic.items.length > 0
+    ? importedTopic.items
+    : [
+        ...importedTopic.tabIds.map(id => createAtlasItem('tab', id)),
+        ...importedTopic.children.map(id => createAtlasItem('topic', id)),
+      ];
+
+  for (const item of importedItems) {
+    if (!item || item.type === 'tab') {
+      if (item) upsertImportedAtlasTab(targetAtlas, targetTopic, importedAtlas.tabs[item.id], stats);
+      continue;
+    }
+
+    if (item.type !== 'topic') continue;
+    const importedChild = importedAtlas.topics[item.id];
+    if (!importedChild) continue;
+    const key = normalizeNameKey(importedChild.name);
+    let targetChildId = key ? childByName.get(key) : '';
+    if (!targetChildId) {
+      targetChildId = createUniqueAtlasId(targetAtlas.topics, 'topic', importedChild.id);
+      targetAtlas.topics[targetChildId] = {
+        id: targetChildId,
+        name: String(importedChild.name || 'Untitled topic'),
+        note: String(importedChild.note || ''),
+        children: [],
+        tabIds: [],
+        items: [],
+        expanded: typeof importedChild.expanded === 'boolean' ? importedChild.expanded : true,
+        createdAt: importedChild.createdAt || nowIso(),
+        updatedAt: importedChild.updatedAt || importedChild.createdAt || nowIso(),
+      };
+      if (key) childByName.set(key, targetChildId);
+      stats.atlasTopicsAdded += 1;
+    } else {
+      const targetChild = targetAtlas.topics[targetChildId];
+      targetChild.note = String(importedChild.note || targetChild.note || '');
+      targetChild.updatedAt = importedChild.updatedAt || targetChild.updatedAt || nowIso();
+    }
+    insertAtlasTopicItem(targetTopic, 'topic', targetChildId);
+    mergeAtlasTopicChildren(targetAtlas, importedAtlas, targetAtlas.topics[targetChildId], importedChild, stats);
+  }
+}
+
+function mergeTabAtlas(targetStore, importedStore, stats) {
+  const targetAtlas = normalizeTabAtlas(targetStore.data.tabAtlas);
+  const importedAtlas = normalizeTabAtlas(importedStore.data.tabAtlas);
+  const rootByName = new Map();
+
+  for (const topicId of targetAtlas.rootTopicIds) {
+    const topic = targetAtlas.topics[topicId];
+    if (!topic) continue;
+    const key = normalizeNameKey(topic.name);
+    if (key && !rootByName.has(key)) rootByName.set(key, topicId);
+  }
+
+  for (const importedRootId of importedAtlas.rootTopicIds) {
+    const importedTopic = importedAtlas.topics[importedRootId];
+    if (!importedTopic) continue;
+    const key = normalizeNameKey(importedTopic.name);
+    let targetTopicId = key ? rootByName.get(key) : '';
+    if (!targetTopicId) {
+      targetTopicId = createUniqueAtlasId(targetAtlas.topics, 'topic', importedTopic.id);
+      targetAtlas.topics[targetTopicId] = {
+        id: targetTopicId,
+        name: String(importedTopic.name || 'Untitled topic'),
+        note: String(importedTopic.note || ''),
+        children: [],
+        tabIds: [],
+        items: [],
+        expanded: typeof importedTopic.expanded === 'boolean' ? importedTopic.expanded : true,
+        createdAt: importedTopic.createdAt || nowIso(),
+        updatedAt: importedTopic.updatedAt || importedTopic.createdAt || nowIso(),
+      };
+      targetAtlas.rootTopicIds.push(targetTopicId);
+      if (key) rootByName.set(key, targetTopicId);
+      stats.atlasTopicsAdded += 1;
+    } else {
+      const targetTopic = targetAtlas.topics[targetTopicId];
+      targetTopic.note = String(importedTopic.note || targetTopic.note || '');
+      targetTopic.updatedAt = importedTopic.updatedAt || targetTopic.updatedAt || nowIso();
+    }
+    mergeAtlasTopicChildren(targetAtlas, importedAtlas, targetAtlas.topics[targetTopicId], importedTopic, stats);
+  }
+
+  targetStore.data.tabAtlas = normalizeTabAtlas(targetAtlas);
+}
+
 function mergeStores(targetStore, importedStore) {
   const importedHadTheme = !!(importedStore && importedStore.settings && THEME_OPTIONS.includes(importedStore.settings.theme));
   const target = normalizeStore(targetStore);
@@ -430,6 +773,9 @@ function mergeStores(targetStore, importedStore) {
     foldersAdded: 0,
     treeTabsAdded: 0,
     treeTabsUpdated: 0,
+    atlasTopicsAdded: 0,
+    atlasTabsAdded: 0,
+    atlasTabsUpdated: 0,
   };
 
   target.features = {
@@ -438,6 +784,10 @@ function mergeStores(targetStore, importedStore) {
     tabTree: {
       ...(target.features.tabTree || {}),
       ...(imported.features.tabTree || {}),
+    },
+    tabAtlas: {
+      ...(target.features.tabAtlas || {}),
+      ...(imported.features.tabAtlas || {}),
     },
   };
   target.settings = {
@@ -451,15 +801,16 @@ function mergeStores(targetStore, importedStore) {
   mergeFavorites(target.data.dashboard, imported.data.dashboard, stats);
   mergeSavedTabs(target.data.dashboard, imported.data.dashboard, stats);
   mergeTabTree(target, imported, stats);
+  mergeTabAtlas(target, imported, stats);
   return { store: target, stats };
 }
 
 function formatImportStats(stats, mode) {
   if (mode === 'replace') {
-    return `Replaced data: ${stats.favorites} sites, ${stats.savedTabs} saved tabs, ${stats.folders} folders, ${stats.treeTabs} stash links.`;
+    return `Replaced data: ${stats.favorites} sites, ${stats.savedTabs} saved tabs, ${stats.folders} folders, ${stats.treeTabs} stash links, ${stats.atlasTopics} atlas topics, ${stats.atlasTabs} atlas tabs.`;
   }
 
-  return `Merged data: +${stats.favoritesAdded} sites, +${stats.savedTabsAdded} saved tabs, +${stats.foldersAdded} folders, +${stats.treeTabsAdded} stash links, ${stats.treeTabsUpdated} updated.`;
+  return `Merged data: +${stats.favoritesAdded} sites, +${stats.savedTabsAdded} saved tabs, +${stats.foldersAdded} folders, +${stats.treeTabsAdded} stash links, ${stats.treeTabsUpdated} stash updated, +${stats.atlasTopicsAdded} atlas topics, +${stats.atlasTabsAdded} atlas tabs, ${stats.atlasTabsUpdated} atlas updated.`;
 }
 
 function createExportEnvelope(store) {
@@ -495,7 +846,7 @@ async function exportData() {
   const date = new Date().toISOString().slice(0, 10);
   downloadJsonFile(`tab-hub-backup-${date}.json`, envelope);
   const counts = countStoreData(store);
-  setMessage(`Exported ${counts.favorites} sites, ${counts.savedTabs} saved tabs, ${counts.folders} folders, ${counts.treeTabs} stash links.`);
+  setMessage(`Exported ${counts.favorites} sites, ${counts.savedTabs} saved tabs, ${counts.folders} folders, ${counts.treeTabs} stash links, ${counts.atlasTopics} atlas topics, ${counts.atlasTabs} atlas tabs.`);
 }
 
 async function importDataFromFile(file, mode) {
