@@ -67,6 +67,7 @@ function createDefaultTabAtlas() {
     rootTopicIds: [],
     topics: {},
     tabs: {},
+    recentTopicIds: [],
   };
 }
 
@@ -237,6 +238,7 @@ function normalizeTabAtlas(raw) {
   const topics = {};
   const tabs = {};
   const visitedTopics = new Set();
+  const topicIdByRawId = new Map();
   const maxDepth = TAB_ATLAS_MAX_DEPTH;
 
   function cloneTab(rawTabId) {
@@ -262,6 +264,7 @@ function normalizeTabAtlas(raw) {
     visitedTopics.add(rawTopicId);
 
     const id = createUniqueAtlasId(topics, 'topic', rawTopicId);
+    topicIdByRawId.set(rawTopicId, id);
     const timestamp = topic.updatedAt || topic.createdAt || nowIso();
     topics[id] = {
       id,
@@ -321,6 +324,12 @@ function normalizeTabAtlas(raw) {
     rootTopicIds,
     topics,
     tabs,
+    recentTopicIds: Array.isArray(raw.recentTopicIds)
+      ? raw.recentTopicIds
+          .map(topicId => topicIdByRawId.get(topicId) || topicId)
+          .filter((topicId, index, ids) => topics[topicId] && ids.indexOf(topicId) === index)
+          .slice(0, 5)
+      : [],
   };
 }
 
@@ -667,7 +676,7 @@ function upsertImportedAtlasTab(atlas, targetTopic, importedTab, stats) {
   stats.atlasTabsAdded += 1;
 }
 
-function mergeAtlasTopicChildren(targetAtlas, importedAtlas, targetTopic, importedTopic, stats) {
+function mergeAtlasTopicChildren(targetAtlas, importedAtlas, targetTopic, importedTopic, stats, importedToTargetTopicIds) {
   const childByName = new Map();
   for (const childId of targetTopic.children) {
     const child = targetAtlas.topics[childId];
@@ -714,8 +723,9 @@ function mergeAtlasTopicChildren(targetAtlas, importedAtlas, targetTopic, import
       targetChild.note = String(importedChild.note || targetChild.note || '');
       targetChild.updatedAt = importedChild.updatedAt || targetChild.updatedAt || nowIso();
     }
+    importedToTargetTopicIds.set(importedChild.id, targetChildId);
     insertAtlasTopicItem(targetTopic, 'topic', targetChildId);
-    mergeAtlasTopicChildren(targetAtlas, importedAtlas, targetAtlas.topics[targetChildId], importedChild, stats);
+    mergeAtlasTopicChildren(targetAtlas, importedAtlas, targetAtlas.topics[targetChildId], importedChild, stats, importedToTargetTopicIds);
   }
 }
 
@@ -723,6 +733,7 @@ function mergeTabAtlas(targetStore, importedStore, stats) {
   const targetAtlas = normalizeTabAtlas(targetStore.data.tabAtlas);
   const importedAtlas = normalizeTabAtlas(importedStore.data.tabAtlas);
   const rootByName = new Map();
+  const importedToTargetTopicIds = new Map();
 
   for (const topicId of targetAtlas.rootTopicIds) {
     const topic = targetAtlas.topics[topicId];
@@ -757,8 +768,19 @@ function mergeTabAtlas(targetStore, importedStore, stats) {
       targetTopic.note = String(importedTopic.note || targetTopic.note || '');
       targetTopic.updatedAt = importedTopic.updatedAt || targetTopic.updatedAt || nowIso();
     }
-    mergeAtlasTopicChildren(targetAtlas, importedAtlas, targetAtlas.topics[targetTopicId], importedTopic, stats);
+    importedToTargetTopicIds.set(importedTopic.id, targetTopicId);
+    mergeAtlasTopicChildren(targetAtlas, importedAtlas, targetAtlas.topics[targetTopicId], importedTopic, stats, importedToTargetTopicIds);
   }
+
+  const mergedRecent = [
+    ...(Array.isArray(targetAtlas.recentTopicIds) ? targetAtlas.recentTopicIds : []),
+    ...(Array.isArray(importedAtlas.recentTopicIds) ? importedAtlas.recentTopicIds : [])
+      .map(topicId => importedToTargetTopicIds.get(topicId))
+      .filter(Boolean),
+  ];
+  targetAtlas.recentTopicIds = mergedRecent
+    .filter((topicId, index, ids) => targetAtlas.topics[topicId] && ids.indexOf(topicId) === index)
+    .slice(0, 5);
 
   targetStore.data.tabAtlas = normalizeTabAtlas(targetAtlas);
 }

@@ -289,6 +289,7 @@ function createDefaultTabAtlas() {
     rootTopicIds: [],
     topics: {},
     tabs: {},
+    recentTopicIds: [],
   };
 }
 
@@ -844,6 +845,7 @@ function normalizeTabAtlas(raw) {
   const topics = {};
   const tabs = {};
   const visitedTopics = new Set();
+  const topicIdByRawId = new Map();
   const maxDepth = TAB_ATLAS_MAX_DEPTH;
 
   function cloneTab(rawTabId) {
@@ -869,6 +871,7 @@ function normalizeTabAtlas(raw) {
     visitedTopics.add(rawTopicId);
 
     const id = createUniqueAtlasId(topics, rawTopicId, createAtlasTopicId);
+    topicIdByRawId.set(rawTopicId, id);
     const timestamp = topic.updatedAt || topic.createdAt || nowIso();
     const nextTopic = {
       id,
@@ -930,6 +933,12 @@ function normalizeTabAtlas(raw) {
     rootTopicIds,
     topics,
     tabs,
+    recentTopicIds: Array.isArray(raw.recentTopicIds)
+      ? raw.recentTopicIds
+          .map(topicId => topicIdByRawId.get(topicId) || topicId)
+          .filter((topicId, index, ids) => topics[topicId] && ids.indexOf(topicId) === index)
+          .slice(0, 5)
+      : [],
   };
 }
 

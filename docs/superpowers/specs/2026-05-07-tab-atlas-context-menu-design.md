@@ -4,27 +4,26 @@
 
 `Tab Atlas` 已经作为独立功能落地，用于把 tabs 沉淀到最多 3 层的知识 topic 树中。当前用户需要先进入 Tab Atlas 页面，再在某个 topic 下手动添加 tab source。这个流程适合整理已有资料，但不适合浏览网页时即时捕获。
 
-现有 `Tab Stash` 已支持右键菜单 `Add current page to Tab Stash`。但 Tab Stash 是浅层 folder -> tabs，适合直接在原生右键二级菜单中选择 folder；Tab Atlas 是多层知识树，选择目标 topic、搜索、写 tab note、创建 topic、处理 L3 限制都需要更多上下文，因此不适合把完整操作塞进原生 context menu。
-
-本设计为 Tab Atlas 增加右键快捷入口：用户在任意网页右键后，可以快速把当前页面保存到某个 Atlas topic。
+现有 `Tab Stash` 已支持右键菜单 `Add current page to Tab Stash`。但 Tab Atlas 的目标是把网页保存到知识 topic 中，因此右键入口应该保持轻量：在当前网页上直接弹出一个选择 topic 的短任务弹窗，不跳转到新的 extension page。
 
 ## 目标
 
 - 在浏览器页面右键菜单中新增 `Add current page to Tab Atlas`。
-- 点击后打开轻量 picker，而不是展开完整 topic 树原生 submenu。
-- picker 中展示当前 tab 的 title 和 URL。
-- picker 支持搜索并选择任意已有 topic，包含 L1、L2、L3。
-- picker 支持为即将添加的 tab source 输入可选 note。
-- picker 支持在添加过程中创建 topic。
-- 创建 topic 时仍遵守最大 3 层限制。
+- 点击后在当前网页注入一个 Tab Atlas 添加弹窗。
+- 弹窗展示当前 page title，并允许选择已有 L1/L2/L3 topic。
+- 弹窗支持为即将添加的 tab source 输入可选 note。
+- 弹窗不支持搜索 topic。
+- 弹窗不支持创建新的 topic。
+- 如果 Atlas 还没有任何 L1 topic，点击右键入口时自动创建一个名为 `Default`、note 为空的 L1 topic。
 - 添加到同一 topic 中已存在的 URL 时更新已有 tab source，并移动到该 topic 内容列表末尾。
-- 添加成功后关闭 picker，并给出明确成功状态。
-- Tab Atlas 关闭时隐藏右键菜单，并在 picker fallback 中显示关闭状态。
+- 添加成功后关闭弹窗，并给出短暂成功状态。
+- Tab Atlas 关闭时隐藏右键菜单。
 
 ## 非目标
 
+- 不打开 `atlas-picker.html` 或任何新的 tab/window。
 - 不在原生右键菜单中展开完整 Atlas topic 树。
-- 不支持从右键菜单直接创建 L2/L3 topic。
+- 不支持从右键流程创建 topic。
 - 不支持一次保存到多个 topic。
 - 不支持批量保存当前窗口所有 tabs。
 - 不支持自动摘要网页内容。
@@ -39,40 +38,35 @@
 Add current page to Tab Atlas
 ```
 
-点击后打开 `atlas-picker.html` popup window。窗口宽度建议 480px，高度建议 640px。它不是 toolbar popup，而是和现有 `tree-picker.html` 类似的短任务窗口。
-
-picker 首屏结构：
+点击后在当前网页上显示 modal：
 
 ```text
 Tab Atlas
 Add current page
 
 [当前页面标题]
-[当前页面 URL]
 
-[Search topics...]
+Topic
+[L1 agent              v]
 
 Note
 [Why is this useful here?]
 
-Topics
-▾ L1 agent
-  ▾ L2 topic a
-      L3 topic d
-  L2 topic b
-
-[Create topic]                  [Add to topic]
+                         [Cancel] [Add]
 ```
 
 交互原则：
 
-- topic tree 默认展开，方便用户看层级。
-- 搜索时只显示匹配 topic 及其祖先路径。
-- 单击 topic 行选中目标 topic。
-- 选中的 topic 行显示高亮和层级 badge。
-- `Add to topic` 在未选中 topic 时禁用。
+- topic 使用自定义 picker 展示，按树的 DFS 顺序列出所有 topic。
+- 展开候选列表时保留层级缩进，如 `L1 agent`、缩进的 `L2 topic a`、更深缩进的 `L3 topic d`。
+- 有子 topic 的 topic 行显示展开/收起箭头，类似浏览器收藏夹树；点击箭头只切换该分支，不选择 topic。
+- 选中具体 topic 后，trigger 折叠态只显示无缩进文案，如 `L3 topic d`。
+- 默认选中最近成功添加过的 topic。
+- 如果没有 recent topic，则选中第一个 L1 topic。
 - `Note` 是可选项，不填也能添加。
-- 成功后显示短暂状态并关闭窗口。
+- `Add` 在没有任何 topic 时禁用。
+- `Esc`、点击遮罩、点击关闭按钮、点击 `Cancel` 都会关闭弹窗。
+- 成功后显示 `Added to Tab Atlas`，随后关闭弹窗。
 
 ## 默认选择
 
@@ -93,69 +87,55 @@ Topics
 - 成功添加后，将目标 topic id 移到 `recentTopicIds` 开头。
 - 最多保留 5 个 id。
 - normalize 时过滤不存在的 topic id。
-- 打开 picker 时优先选中第一个有效 recent topic。
+- 打开弹窗时优先选中第一个有效 recent topic。
 - 如果没有 recent topic，则选中第一个 L1 topic。
-- 如果没有任何 topic，则进入空态。
+- 如果没有任何 L1 topic，则先自动创建 `Default` L1 topic，再打开弹窗并选中它。
 
-## 空态
+## 默认 L1 Topic
 
-当 Atlas 中没有 topic：
+当 Atlas 中没有任何 L1 topic 时，右键入口会自动创建：
 
-```text
-No topics yet.
-Create your first topic to save this page into Tab Atlas.
-
-[Topic name]
-[Note optional]
-[Create topic and add]
+```json
+{
+  "name": "Default",
+  "note": "",
+  "children": [],
+  "tabIds": [],
+  "items": [],
+  "expanded": true
+}
 ```
 
 行为：
 
-- 创建的是 L1 topic。
-- 成功后立刻把当前页面作为 tab source 添加到这个 L1 topic。
-- 如果 topic 名称为空，显示 `Enter a topic name`。
-- 如果 L1 已存在同名 topic，显示 `Topic name already exists here`。
-
-## 创建 Topic
-
-picker 中提供 `Create topic` 入口，用于在不中断保存流程的情况下创建目标 topic。
-
-创建表单字段：
-
-- `Parent topic`：可选；默认当前选中的 topic。
-- `Topic name`：必填。
-- `Topic note`：可选。
-
-规则：
-
-- 如果当前选中的是 L1 或 L2，则默认在其下创建子 topic。
-- 如果当前选中的是 L3，则禁用“在其下创建”，并提示 `Maximum topic depth reached`。
-- 用户可以切换父 topic。
-- 父 topic 为空时创建 L1 topic。
-- 同一个父 topic 下 topic 名称不允许重复。
-- 创建成功后自动选中新 topic。
-- 用户仍需点击 `Add to topic` 完成添加，除非处于“无 topic 空态”的 `Create topic and add` 流程。
+- 自动创建只发生在没有任何可用 L1 topic 时。
+- 自动创建发生在弹窗注入前，因此弹窗打开时 topic picker 里会显示 `L1 Default`。
+- 默认 topic 不会自动写入 note。
+- 用户仍需要点击 `Add` 才会把当前页面保存到 `Default` topic。
 
 ## 添加行为
 
 添加当前页面到 topic 时：
 
-1. 从 `chrome.storage.session` 读取 pending current page。
-2. normalize URL，使用和 Tab Atlas app 一致的 URL 比较规则。
-3. 找到目标 topic。
-4. 如果该 topic 已有同 URL tab source：
+1. 从右键点击所在 tab 获取当前页面 `url` 和 `title`。
+2. background 读取并 normalize `tabOutStore`。
+3. 如果没有任何 L1 topic，自动创建 `Default` L1 topic 并保存。
+4. 在当前网页注入 modal，由 modal 发送 `tab-out:add-current-page-to-atlas` runtime message。
+5. background 重新读取并 normalize `tabOutStore`。
+6. normalize URL，使用和 Tab Atlas app 一致的 URL 比较规则。
+7. 找到目标 topic。
+8. 如果该 topic 已有同 URL tab source：
    - 更新 title。
-   - 更新 note 为 picker 当前 note。
+   - 更新 note 为弹窗当前 note。
    - 更新 `updatedAt`。
    - 将该 tab source 移到 topic 的 `items` 末尾。
-5. 如果不存在：
+9. 如果不存在：
    - 创建新的 `source_*`。
    - 写入 title、url、note、createdAt、updatedAt。
    - 将 `{ "type": "tab", "id": "source_*" }` push 到目标 topic `items` 末尾。
-6. 更新 topic branch 的 `updatedAt`。
-7. 更新 `recentTopicIds`。
-8. 保存 `tabOutStore`。
+10. 更新 topic branch 的 `updatedAt`。
+11. 更新 `recentTopicIds`。
+12. 保存 `tabOutStore`。
 
 添加后不关闭原网页 tab。这个操作是“保存到知识地图”，不是“整理并关闭当前 tab”。
 
@@ -186,59 +166,19 @@ Tab Atlas 基础模型保持不变，只新增 `recentTopicIds`：
 
 ```js
 const TAB_ATLAS_CONTEXT_MENU_ID = 'tab-out-add-current-page-atlas';
-const TAB_ATLAS_PENDING_ADD_KEY = 'tabAtlasPendingAdd';
+const TAB_ATLAS_ADD_CURRENT_PAGE_MESSAGE = 'tab-out:add-current-page-to-atlas';
 ```
 
 `background.js` 负责：
 
 - 在安装、启动、storage 变化后同步 context menu。
 - 当 `features.tabAtlas.enabled === false` 时移除 Tab Atlas menu。
-- 点击 `TAB_ATLAS_CONTEXT_MENU_ID` 时，将当前 tab title/url/favicon/sourceTabId/capturedAt 写入 `chrome.storage.session`。
-- 打开 `atlas-picker.html`。
+- 点击 `TAB_ATLAS_CONTEXT_MENU_ID` 时，如果没有任何 L1 topic，自动创建 `Default` L1 topic。
+- 点击 `TAB_ATLAS_CONTEXT_MENU_ID` 时读取 store，拉平成 topic options，并向当前页面注入 modal。
+- 如果当前页面不允许注入脚本，只记录 warning，不打开 fallback page。
+- 接收 modal 发出的 runtime message，执行添加或更新 tab source。
 
-pending payload：
-
-```json
-{
-  "url": "https://example.com/",
-  "title": "Example",
-  "favIconUrl": "",
-  "sourceTabId": 123,
-  "capturedAt": "2026-05-07T10:00:00.000Z"
-}
-```
-
-## Picker 设计
-
-新增文件：
-
-```text
-extension/atlas-picker.html
-extension/atlas-picker.js
-```
-
-样式优先复用现有 `style.css` 中的 picker、topic tree、button、input 风格；必要时补少量 `.atlas-picker-*` class。
-
-`atlas-picker.js` 负责：
-
-- 读取 pending current page。
-- 读取并 normalize `tabOutStore`。
-- 渲染 topic tree、搜索结果、空态、关闭态。
-- 管理 selected topic、note、create topic 表单。
-- 执行 add/upsert tab source。
-- 保存 store。
-- 成功后关闭窗口。
-
-为了降低重复，picker 可以复制当前 `tree-picker.js` 的 store normalize 基础结构，但 Atlas 相关 helper 必须和 `app.js` 保持同一行为：
-
-- `normalizeTabAtlas`
-- `normalizeTreeUrl`
-- `getComparableAtlasUrl`
-- `assertUniqueAtlasTopicName`
-- `upsertAtlasTabSource`
-- `touchAtlasTopicBranch`
-
-如果后续继续增长，应把这些 shared helper 拆到公共文件；本次可以先保持纯 extension、无 build step 的文件级复用。
+注入弹窗使用 Shadow DOM，避免页面 CSS 污染弹窗样式，也避免弹窗 CSS 污染页面。
 
 ## 状态和错误
 
@@ -248,28 +188,10 @@ extension/atlas-picker.js
 Tab Atlas is turned off in Settings.
 ```
 
-pending 缺失：
+目标 topic 无效：
 
 ```text
-Could not find the current page. Try the context menu again.
-```
-
-URL 不支持：
-
-```text
-This page URL cannot be saved.
-```
-
-重复 topic 名：
-
-```text
-Topic name already exists here
-```
-
-最大层级：
-
-```text
-Maximum topic depth reached
+Choose a valid topic
 ```
 
 添加失败：
@@ -286,12 +208,12 @@ Added to Tab Atlas
 
 ## 可访问性和键盘
 
-- `Esc` 关闭 picker。
-- topic list 使用 button 行，支持 Tab 聚焦。
-- `Enter` 选中 topic 或提交当前表单。
-- 搜索框 autofocus。
-- 选中 topic 使用 `aria-selected="true"`。
-- create topic form 的错误写入可被屏幕阅读器读取的状态区域。
+- `Esc` 关闭弹窗。
+- topic picker、note textarea 和 action buttons 支持 Tab 聚焦。
+- picker 展开后，`ArrowUp` / `ArrowDown` 在可见 topic 间移动，`ArrowLeft` 收起当前分支，`ArrowRight` 展开当前分支。
+- `Enter` 提交当前表单。
+- 关闭按钮提供 `aria-label="Close"`。
+- 错误和成功状态在弹窗内以文本显示。
 
 ## 测试计划
 
@@ -299,7 +221,8 @@ Added to Tab Atlas
 
 ```bash
 node --check extension/background.js
-node --check extension/atlas-picker.js
+node --check extension/app.js
+node --check extension/popup.js
 git diff --check
 ```
 
@@ -307,20 +230,19 @@ git diff --check
 
 - Tab Atlas 开启时右键菜单出现。
 - Tab Atlas 关闭时右键菜单消失。
-- 从网页右键打开 picker，能看到当前页面 title 和 URL。
+- 从普通网页右键打开弹窗，不跳转新页面。
+- 弹窗能看到当前页面 title。
+- topic picker 能列出 L1/L2/L3 topic。
 - 选择 L1/L2/L3 topic 后添加成功。
 - 同 topic 重复 URL 更新已有 tab source，并移动到该 topic 内容末尾。
 - note 能保存和更新。
-- 没有 topic 时可以创建 L1 topic 并添加当前页面。
-- 在 L2 下创建 L3 topic 后可以保存。
-- L3 下创建子 topic 被禁止，并显示 `Maximum topic depth reached`。
-- 搜索 topic 后仍能添加到正确 topic。
+- 没有 L1 topic 时，右键入口自动创建 `Default` L1 topic，并在弹窗中选中它。
 - reload extension 后 context menu 能重新同步。
 - import/export 后 `recentTopicIds` 不包含不存在的 topic。
 
 ## 后续增强
 
 - 右键菜单二级展示最近 3 个 topic，点击可直接保存。
-- picker 中支持 `Open in Tab Atlas`，添加后跳转到目标 topic 详情页。
+- 弹窗中提供 `Open in Tab Atlas`，但仍不在添加流程中强制跳转。
 - 支持保存当前窗口所有 tabs 到同一 topic。
 - 支持从 Dashboard open tab 行直接 `Add to Tab Atlas`。
