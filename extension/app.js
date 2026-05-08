@@ -1332,6 +1332,22 @@ async function moveAtlasTabSource(draggedId, targetType, targetId, position = 'i
   return true;
 }
 
+async function moveAtlasRootTopic(draggedId, targetId, position = 'after') {
+  if (!draggedId || !targetId || draggedId === targetId) return false;
+  const atlas = await getTabAtlas();
+  if (!atlas.topics[draggedId] || !atlas.topics[targetId]) return false;
+  if (!atlas.rootTopicIds.includes(draggedId) || !atlas.rootTopicIds.includes(targetId)) return false;
+
+  const nextRootIds = atlas.rootTopicIds.filter(topicId => topicId !== draggedId);
+  let insertIndex = nextRootIds.indexOf(targetId);
+  if (insertIndex < 0) return false;
+  if (position === 'after') insertIndex += 1;
+  nextRootIds.splice(insertIndex, 0, draggedId);
+  atlas.rootTopicIds = nextRootIds;
+  await saveTabAtlas(atlas);
+  return true;
+}
+
 async function getTabTree() {
   const store = await getTabOutStore();
   return normalizeTabTree(store.data.tabTree);
@@ -1976,7 +1992,7 @@ function renderAtlasHomeItem(atlas, topicId) {
   const tabCount = countAtlasTopicTabs(atlas, topicId);
   const updated = timeAgo(topic.updatedAt);
   return `
-    <div class="atlas-home-item" data-atlas-topic-id="${safeId}">
+    <div class="atlas-home-item" draggable="true" data-atlas-node-type="root-topic" data-atlas-topic-id="${safeId}" data-topic-id="${safeId}">
       <button class="atlas-home-main" type="button" data-action="open-atlas-topic" data-topic-id="${safeId}">
         <span class="atlas-home-title">${safeName}</span>
         <span class="atlas-home-note">${safeNote || 'No note yet.'}</span>
@@ -2002,11 +2018,7 @@ async function renderTabAtlasHome() {
   const atlas = await getTabAtlas();
   const query = tabAtlasHomeSearchQuery.trim().toLowerCase();
   const topicIds = atlas.rootTopicIds
-    .filter(topicId => atlas.topics[topicId] && atlasTopicMatches(atlas.topics[topicId], query))
-    .sort((a, b) => {
-      if (query) return 0;
-      return new Date(atlas.topics[b].updatedAt || 0) - new Date(atlas.topics[a].updatedAt || 0);
-    });
+    .filter(topicId => atlas.topics[topicId] && atlasTopicMatches(atlas.topics[topicId], query));
 
   const list = document.getElementById('tabAtlasHomeList');
   if (!list) return;
@@ -2462,12 +2474,10 @@ function selectAtlasAddType(type) {
   const modal = document.getElementById('atlasAddModal');
   const typeInput = document.getElementById('atlasAddTypeInput');
   const modeInput = document.getElementById('atlasAddModeInput');
-  const notice = document.getElementById('atlasAddDepthNotice');
   const canAddTopic = modal ? modal.dataset.canAddTopic === 'true' : true;
   if (!typeInput || !modeInput) return;
 
   if (type === 'topic' && !canAddTopic) {
-    if (notice) notice.style.display = 'block';
     setAtlasAddError('Maximum topic depth reached');
     return;
   }
@@ -2492,7 +2502,6 @@ async function openAtlasAddModal(topicId) {
   const modeInput = document.getElementById('atlasAddModeInput');
   const form = document.getElementById('atlasAddForm');
   const topicButton = document.getElementById('atlasAddTopicTypeButton');
-  const notice = document.getElementById('atlasAddDepthNotice');
   if (!modal || !topicInput || !typeInput || !modeInput || !form) return;
 
   const atlas = await getTabAtlas();
@@ -2513,7 +2522,6 @@ async function openAtlasAddModal(topicId) {
     topicButton.classList.toggle('disabled', !canAddTopic);
     topicButton.setAttribute('aria-disabled', canAddTopic ? 'false' : 'true');
   }
-  if (notice) notice.style.display = canAddTopic ? 'none' : 'block';
   setAtlasAddError('');
   updateAtlasAddModalUi();
   modal.style.display = 'flex';
@@ -4640,6 +4648,19 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
 });
 
 document.addEventListener('dragstart', (e) => {
+  const atlasHomeItem = e.target.closest('.atlas-home-item');
+  if (atlasHomeItem && atlasHomeItem.getAttribute('draggable') === 'true') {
+    atlasDragId = atlasHomeItem.dataset.topicId || null;
+    atlasDragType = 'root-topic';
+    atlasDragSubtreeHeight = 1;
+    atlasHomeItem.classList.add('dragging');
+    if (e.dataTransfer) {
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', atlasDragId || '');
+    }
+    return;
+  }
+
   const atlasTopicRow = e.target.closest('.atlas-topic-row');
   if (atlasTopicRow && atlasTopicRow.getAttribute('draggable') === 'true') {
     atlasDragId = atlasTopicRow.dataset.topicId || null;
@@ -4690,8 +4711,27 @@ document.addEventListener('dragstart', (e) => {
 });
 
 document.addEventListener('dragover', (e) => {
+  const atlasHomeItem = e.target.closest('.atlas-home-item');
+  if (atlasHomeItem && atlasDragId && atlasDragType === 'root-topic') {
+    const targetId = atlasHomeItem.dataset.topicId || null;
+    document.querySelectorAll('.atlas-home-item.drop-before, .atlas-home-item.drop-after').forEach(el => {
+      if (el !== atlasHomeItem) el.classList.remove('drop-before', 'drop-after');
+    });
+    if (!targetId || targetId === atlasDragId) return;
+
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+
+    const rect = atlasHomeItem.getBoundingClientRect();
+    const position = e.clientY - rect.top < rect.height * 0.5 ? 'before' : 'after';
+    atlasHomeItem.dataset.dropPosition = position;
+    atlasHomeItem.classList.remove('drop-before', 'drop-after');
+    atlasHomeItem.classList.add(`drop-${position}`);
+    return;
+  }
+
   const atlasRow = e.target.closest('.atlas-topic-row, .atlas-tab-source');
-  if (atlasRow && atlasDragId) {
+  if (atlasRow && atlasDragId && (atlasDragType === 'topic' || atlasDragType === 'tab')) {
     const targetType = atlasRow.classList.contains('atlas-topic-row') ? 'topic' : 'tab';
     const targetId = targetType === 'topic' ? atlasRow.dataset.topicId : atlasRow.dataset.tabId;
     if (!targetId || targetId === atlasDragId) return;
@@ -4777,6 +4817,12 @@ document.addEventListener('dragover', (e) => {
 });
 
 document.addEventListener('dragleave', (e) => {
+  const atlasHomeItem = e.target.closest('.atlas-home-item');
+  if (atlasHomeItem) {
+    const related = e.relatedTarget && e.relatedTarget.closest ? e.relatedTarget.closest('.atlas-home-item') : null;
+    if (related !== atlasHomeItem) atlasHomeItem.classList.remove('drop-before', 'drop-after');
+  }
+
   const atlasRow = e.target.closest('.atlas-topic-row, .atlas-tab-source');
   if (atlasRow) {
     const related = e.relatedTarget && e.relatedTarget.closest ? e.relatedTarget.closest('.atlas-topic-row, .atlas-tab-source') : null;
@@ -4799,7 +4845,7 @@ document.addEventListener('dragend', () => {
   atlasDragId = null;
   atlasDragType = null;
   atlasDragSubtreeHeight = 1;
-  document.querySelectorAll('.atlas-topic-row, .atlas-tab-source').forEach(row => {
+  document.querySelectorAll('.atlas-home-item, .atlas-topic-row, .atlas-tab-source').forEach(row => {
     row.classList.remove('dragging', 'drop-before', 'drop-after', 'drop-inside');
     delete row.dataset.dropPosition;
   });
@@ -4818,8 +4864,30 @@ document.addEventListener('dragend', () => {
 });
 
 document.addEventListener('drop', async (e) => {
+  const atlasHomeItem = e.target.closest('.atlas-home-item');
+  if (atlasHomeItem && atlasDragId && atlasDragType === 'root-topic') {
+    e.preventDefault();
+    const targetId = atlasHomeItem.dataset.topicId || null;
+    const position = atlasHomeItem.dataset.dropPosition || 'after';
+    const moved = await moveAtlasRootTopic(atlasDragId, targetId, position);
+    atlasDragId = null;
+    atlasDragType = null;
+    atlasDragSubtreeHeight = 1;
+    document.querySelectorAll('.atlas-home-item').forEach(row => {
+      row.classList.remove('dragging', 'drop-before', 'drop-after');
+      delete row.dataset.dropPosition;
+    });
+    if (!moved) {
+      showToast('Cannot move there');
+      return;
+    }
+    await renderTabAtlasHome();
+    showToast('Topic moved');
+    return;
+  }
+
   const atlasRow = e.target.closest('.atlas-topic-row, .atlas-tab-source');
-  if (atlasRow && atlasDragId) {
+  if (atlasRow && atlasDragId && (atlasDragType === 'topic' || atlasDragType === 'tab')) {
     e.preventDefault();
     const targetType = atlasRow.classList.contains('atlas-topic-row') ? 'topic' : 'tab';
     const targetId = targetType === 'topic' ? atlasRow.dataset.topicId : atlasRow.dataset.tabId;
@@ -4833,7 +4901,7 @@ document.addEventListener('drop', async (e) => {
     atlasDragId = null;
     atlasDragType = null;
     atlasDragSubtreeHeight = 1;
-    document.querySelectorAll('.atlas-topic-row, .atlas-tab-source').forEach(row => {
+    document.querySelectorAll('.atlas-home-item, .atlas-topic-row, .atlas-tab-source').forEach(row => {
       row.classList.remove('dragging', 'drop-before', 'drop-after', 'drop-inside');
       delete row.dataset.dropPosition;
     });

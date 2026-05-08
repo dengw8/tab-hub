@@ -94,6 +94,7 @@ You can add links from the Tab Stash page or from the browser right-click menu.
 Tab Atlas is for knowledge you want to keep structured instead of temporarily parked.
 
 - The Tab Atlas home shows top-level knowledge topics as a list.
+- Top-level topics can be dragged on the Tab Atlas home to adjust their order.
 - Each top-level topic opens into a topic tree with expandable and collapsible branches.
 - Topic depth is capped at three levels.
 - Every topic can have an optional note.

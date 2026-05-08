@@ -169,6 +169,7 @@ Rules:
 - Topic names must be unique among siblings. Tab titles may repeat.
 - Topics and source tabs both support optional notes.
 - Top-level Atlas home shows only L1 topic list with name and note. It does not expand the tree.
+- L1 topic order is adjustable on the Atlas home and stored in `rootTopicIds`.
 - A top-level topic detail page shows the topic tree for that L1 branch.
 - Topic nodes support expand/collapse in the Atlas detail page.
 - Dragging is supported inside one L1 branch for topics and source tabs. Reparenting must preserve `maxDepth`.

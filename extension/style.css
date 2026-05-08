@@ -1904,6 +1904,7 @@ footer {
 }
 
 .atlas-home-item {
+  position: relative;
   display: flex;
   align-items: stretch;
   gap: 10px;
@@ -1911,12 +1912,39 @@ footer {
   border: 1px solid rgba(154, 145, 138, 0.16);
   border-radius: 8px;
   background: var(--surface-soft);
-  transition: background 0.12s ease, border-color 0.12s ease;
+  transition: background 0.12s ease, border-color 0.12s ease, opacity 0.12s ease;
+}
+
+.atlas-home-item[draggable="true"] {
+  cursor: grab;
 }
 
 .atlas-home-item:hover {
   background: var(--hover-bg);
   border-color: var(--warm-gray);
+}
+
+.atlas-home-item.dragging {
+  opacity: 0.45;
+}
+
+.atlas-home-item.drop-before::before,
+.atlas-home-item.drop-after::after {
+  content: '';
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  height: 2px;
+  background: var(--accent-amber);
+  border-radius: 999px;
+}
+
+.atlas-home-item.drop-before::before {
+  top: -1px;
+}
+
+.atlas-home-item.drop-after::after {
+  bottom: -1px;
 }
 
 .atlas-home-main {
@@ -2155,15 +2183,6 @@ footer {
 .atlas-type-button.disabled {
   opacity: 0.48;
   cursor: not-allowed;
-}
-
-.atlas-add-notice {
-  font-size: 12px;
-  color: var(--muted);
-  background: var(--accent-amber-soft);
-  border-radius: 7px;
-  padding: 9px 11px;
-  line-height: 1.4;
 }
 
 .atlas-textarea {
