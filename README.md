@@ -20,9 +20,10 @@ No server. No account. No Tab Hub backend. Your data stays in browser extension 
 - **Tab Atlas** organizes knowledge topics with nested subtopics, source tabs, and optional notes
 - **Right-click add to Tab Stash** adds the current page to an existing folder or creates a folder inline
 - **Right-click add to Tab Atlas** saves the current page into an existing knowledge topic from an inline picker
-- **Settings** can toggle optional Tab Stash and Tab Atlas views
-- **Toolbar popup** controls Tab Stash, theme, import, and export
+- **Settings** controls optional features, appearance, Tab Hub backups, and open tabs transfer
+- **Toolbar popup** opens Tab Stash, Tab Atlas, and Settings
 - **Import/export** moves data between Chrome, Edge, and Edge Beta using local JSON backups
+- **Open tabs transfer** moves currently open tabs between Chrome, Edge, and Edge Beta, including native tab groups when supported
 - **Light/dark themes** can follow system appearance or stay fixed
 - **Localhost grouping** shows port numbers so local projects are easier to tell apart
 - **100% local-first** no accounts, no remote sync service, no setup beyond loading the extension
@@ -67,7 +68,7 @@ You open a new tab
   -> Right-click a page to add it to a Tab Stash folder
   -> Use Tab Atlas for structured knowledge topics and source tabs
   -> Right-click a page to add it to an Atlas topic without leaving the page
-  -> Use the toolbar popup for theme and data transfer
+  -> Use the toolbar popup for Tab Stash, Tab Atlas, and Settings
 ```
 
 Dashboard is the fixed new tab entry. Tab Stash is an optional feature and is enabled by default.
@@ -116,12 +117,24 @@ Click the Tab Hub icon in the browser toolbar to open controls:
 
 - Toggle Tab Stash on/off
 - Open Tab Stash
-- Choose theme: **System**, **Light**, or **Dark**
-- Export data
-- Import and merge data
-- Replace local data from a backup
+- Toggle Tab Atlas on/off
+- Open Tab Atlas
+- Open Settings
 
-Tab Atlas can be toggled from the Settings modal inside the Tab Hub new tab page.
+Settings opens inside the Tab Hub new tab page. It contains optional feature toggles, appearance controls, Tab Hub backup import/export, and open tabs transfer.
+
+---
+
+## Settings
+
+Open **Settings** from the toolbar popup or the gear button inside Tab Hub.
+
+Settings contains lower-frequency controls:
+
+- **Features** toggles Tab Stash and Tab Atlas.
+- **Appearance** chooses **System**, **Light**, or **Dark** theme.
+- **Tab Hub backup** exports, merges, or replaces saved Tab Hub data.
+- **Open tabs transfer** exports and imports currently open browser windows, tabs, and tab groups.
 
 ---
 
@@ -129,9 +142,9 @@ Tab Atlas can be toggled from the Settings modal inside the Tab Hub new tab page
 
 Chrome, Edge, and Edge Beta keep extension local storage separately. Tab Hub does not automatically sync between them.
 
-Use **Export data** in one browser and **Import merge** in another browser to move data across browsers.
+Open **Settings** and use **Export backup** in one browser and **Import merge** in another browser to move data across browsers.
 
-Export creates a local JSON file named like:
+Export backup creates a local JSON file named like:
 
 ```text
 tab-hub-backup-YYYY-MM-DD.json
@@ -143,6 +156,16 @@ Import modes:
 - **Replace data** overwrites the current browser's Tab Hub data with the selected backup.
 
 The backup includes feature flags, theme settings, Common sites, Saved for later, Tab Stash data, Tab Atlas data, and metadata.
+
+Open tabs transfer is separate from Tab Hub data backups. In **Settings**, use **Export tabs** to create a local session file named like:
+
+```text
+tab-hub-open-tabs-YYYY-MM-DD.json
+```
+
+Use **Import tabs** in another Chrome, Edge, or Edge Beta browser to open the exported tabs in new windows. Tab Hub restores tab order, active tabs, pinned tabs, and native tab groups when the target browser supports Chromium tab group APIs. If native tab groups are unavailable, Tab Hub still opens the tabs in order and keeps the import message compact.
+
+Open tabs transfer does not save cookies, login state, form state, scroll position, or browser history. Browser-internal pages such as `chrome://settings`, `edge://settings`, extension pages, and DevTools pages may be skipped during import.
 
 ---
 
@@ -173,6 +196,7 @@ Legacy `favorites` and `deferred` keys are migrated into `data.dashboard` when t
 | Storage | `chrome.storage.local` |
 | Context menu | `chrome.contextMenus` for Tab Stash and Tab Atlas quick add |
 | Page injection | `chrome.scripting` for inline Tab Stash folder creation and Tab Atlas topic picker |
+| Tab groups | `chrome.tabGroups` and `chrome.tabs.group()` for open tabs transfer |
 | Favicons | Manifest V3 `_favicon` URL with the `favicon` permission |
 | Sound | Web Audio API |
 | UI | Plain HTML, CSS, and JavaScript |

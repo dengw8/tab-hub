@@ -4,8 +4,15 @@ const TAB_OUT_STORE_KEY = 'tabOutStore';
 const TAB_OUT_STORE_VERSION = 1;
 const EXPORT_FORMAT = 'tab-hub-backup';
 const EXPORT_FORMAT_VERSION = 1;
+const OPEN_TABS_SESSION_FORMAT = 'tab-hub-open-tabs-session';
+const OPEN_TABS_SESSION_FORMAT_VERSION = 1;
+const OPEN_TABS_IMPORT_MESSAGE = 'tab-hub:import-open-tabs-session';
+const OPEN_TABS_IMPORT_CONFIRM_THRESHOLD = 50;
+const OPEN_TABS_IMPORT_MAX_TABS = 1000;
+const TAB_GROUP_NONE_ID = -1;
 const TAB_ATLAS_MAX_DEPTH = 3;
 const THEME_OPTIONS = ['system', 'light', 'dark'];
+const TAB_GROUP_COLORS = ['grey', 'blue', 'red', 'yellow', 'green', 'pink', 'purple', 'cyan', 'orange'];
 
 let pendingImportMode = 'merge';
 
@@ -849,6 +856,166 @@ function createExportEnvelope(store) {
   };
 }
 
+function normalizeTabGroupColor(color) {
+  return TAB_GROUP_COLORS.includes(color) ? color : 'grey';
+}
+
+function detectBrowserName() {
+  const ua = navigator.userAgent || '';
+  if (/\bEdg\//.test(ua)) return 'Microsoft Edge';
+  if (/\bChrome\//.test(ua)) return 'Google Chrome';
+  if (/\bChromium\//.test(ua)) return 'Chromium';
+  return 'Chromium Browser';
+}
+
+function getExtensionVersion() {
+  const manifest = chrome.runtime && chrome.runtime.getManifest ? chrome.runtime.getManifest() : { version: '1.0.0' };
+  return manifest.version || '1.0.0';
+}
+
+function isGroupedTab(tab) {
+  return Number.isInteger(tab && tab.groupId) && tab.groupId !== TAB_GROUP_NONE_ID && tab.groupId >= 0;
+}
+
+async function getNormalBrowserWindows() {
+  try {
+    return await chrome.windows.getAll({ populate: true, windowTypes: ['normal'] });
+  } catch {
+    const windows = await chrome.windows.getAll({ populate: true });
+    return windows.filter(item => !item.type || item.type === 'normal');
+  }
+}
+
+async function getTabGroupsById() {
+  if (!chrome.tabGroups || typeof chrome.tabGroups.query !== 'function') return new Map();
+
+  try {
+    const groups = await chrome.tabGroups.query({});
+    return new Map(groups.map(group => [group.id, group]));
+  } catch (err) {
+    console.warn('[tab-hub] Could not read tab groups for export:', err);
+    return new Map();
+  }
+}
+
+function createOpenTabsWindowSnapshot(sourceWindow, sourceIndex, groupsById) {
+  const tabs = Array.isArray(sourceWindow.tabs)
+    ? [...sourceWindow.tabs].sort((a, b) => (a.index || 0) - (b.index || 0))
+    : [];
+  const groupKeyByNativeId = new Map();
+  const nativeGroupIds = [];
+
+  for (const tab of tabs) {
+    if (!isGroupedTab(tab) || groupKeyByNativeId.has(tab.groupId)) continue;
+    nativeGroupIds.push(tab.groupId);
+    groupKeyByNativeId.set(tab.groupId, `w${sourceIndex}-g${nativeGroupIds.length - 1}`);
+  }
+
+  const groups = nativeGroupIds.map(groupId => {
+    const group = groupsById.get(groupId) || {};
+    const firstTab = tabs.find(tab => tab.groupId === groupId);
+    return {
+      key: groupKeyByNativeId.get(groupId),
+      title: String(group.title || ''),
+      color: normalizeTabGroupColor(group.color),
+      collapsed: typeof group.collapsed === 'boolean' ? group.collapsed : false,
+      firstTabIndex: firstTab && Number.isFinite(firstTab.index) ? firstTab.index : 0,
+    };
+  });
+
+  return {
+    key: `w${sourceIndex}`,
+    index: Number.isFinite(sourceWindow.index) ? sourceWindow.index : sourceIndex,
+    focused: !!sourceWindow.focused,
+    groups,
+    tabs: tabs.map((tab, fallbackIndex) => ({
+      title: String(tab.title || ''),
+      url: String(tab.url || ''),
+      index: Number.isFinite(tab.index) ? tab.index : fallbackIndex,
+      active: !!tab.active,
+      pinned: !!tab.pinned,
+      groupKey: isGroupedTab(tab) ? (groupKeyByNativeId.get(tab.groupId) || '') : '',
+    })),
+  };
+}
+
+async function createOpenTabsSessionEnvelope() {
+  const [browserWindows, groupsById] = await Promise.all([
+    getNormalBrowserWindows(),
+    getTabGroupsById(),
+  ]);
+  const normalWindows = browserWindows
+    .filter(item => item && !item.incognito && (!item.type || item.type === 'normal'))
+    .sort((a, b) => (a.index || 0) - (b.index || 0));
+
+  return {
+    format: OPEN_TABS_SESSION_FORMAT,
+    formatVersion: OPEN_TABS_SESSION_FORMAT_VERSION,
+    exportedAt: nowIso(),
+    app: {
+      name: 'Tab Hub',
+      version: getExtensionVersion(),
+    },
+    source: {
+      browser: detectBrowserName(),
+      userAgent: navigator.userAgent || '',
+      extensionVersion: getExtensionVersion(),
+    },
+    windows: normalWindows.map((item, index) => createOpenTabsWindowSnapshot(item, index, groupsById)),
+  };
+}
+
+function countOpenTabsSession(session) {
+  const windows = Array.isArray(session && session.windows) ? session.windows : [];
+  return windows.reduce((counts, item) => {
+    const tabs = Array.isArray(item && item.tabs) ? item.tabs : [];
+    const groups = Array.isArray(item && item.groups) ? item.groups : [];
+    counts.windows += 1;
+    counts.tabs += tabs.length;
+    counts.groups += groups.length;
+    return counts;
+  }, { windows: 0, tabs: 0, groups: 0 });
+}
+
+function validateOpenTabsSessionPayload(payload) {
+  if (!payload || typeof payload !== 'object') {
+    throw new Error('Choose a valid Tab Hub open tabs file');
+  }
+
+  if (payload.format !== OPEN_TABS_SESSION_FORMAT) {
+    throw new Error('Choose a Tab Hub open tabs export file');
+  }
+
+  if (payload.formatVersion !== OPEN_TABS_SESSION_FORMAT_VERSION) {
+    throw new Error('This open tabs export version is not supported');
+  }
+
+  if (!Array.isArray(payload.windows)) {
+    throw new Error('This open tabs export is missing window data');
+  }
+
+  const counts = countOpenTabsSession(payload);
+  if (counts.tabs > OPEN_TABS_IMPORT_MAX_TABS) {
+    throw new Error(`This file has ${counts.tabs} tabs. Import up to ${OPEN_TABS_IMPORT_MAX_TABS} at a time.`);
+  }
+
+  return counts;
+}
+
+function formatOpenTabsImportSummary(summary) {
+  if (!summary || !summary.tabsOpened) return 'No restorable tabs found in this file.';
+  if (!summary.nativeGroupsSupported && summary.groupsOpenedUngrouped > 0) {
+    const skipped = summary.skippedTabs || summary.failedTabs
+      ? `, skipped ${(summary.skippedTabs || 0) + (summary.failedTabs || 0)} pages`
+      : '';
+    return `Opened ${summary.tabsOpened} tabs without native groups${skipped}.`;
+  }
+
+  const skippedCount = (summary.skippedTabs || 0) + (summary.failedTabs || 0);
+  const skipped = skippedCount > 0 ? `, skipped ${skippedCount} pages` : '';
+  return `Opened ${summary.tabsOpened} tabs, restored ${summary.groupsRestored || 0} groups${skipped}.`;
+}
+
 function downloadJsonFile(filename, data) {
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
@@ -869,6 +1036,14 @@ async function exportData() {
   downloadJsonFile(`tab-hub-backup-${date}.json`, envelope);
   const counts = countStoreData(store);
   setMessage(`Exported ${counts.favorites} sites, ${counts.savedTabs} saved tabs, ${counts.folders} folders, ${counts.treeTabs} stash links, ${counts.atlasTopics} atlas topics, ${counts.atlasTabs} atlas tabs.`);
+}
+
+async function exportOpenTabsSession() {
+  const envelope = await createOpenTabsSessionEnvelope();
+  const date = new Date().toISOString().slice(0, 10);
+  downloadJsonFile(`tab-hub-open-tabs-${date}.json`, envelope);
+  const counts = countOpenTabsSession(envelope);
+  setMessage(`Exported ${counts.tabs} tabs in ${counts.windows} windows.`);
 }
 
 async function importDataFromFile(file, mode) {
@@ -901,10 +1076,55 @@ async function importDataFromFile(file, mode) {
   setMessage(formatImportStats(stats, 'merge'));
 }
 
+async function importOpenTabsSessionFromFile(file) {
+  if (!file) return;
+  const text = await file.text();
+  let payload;
+  try {
+    payload = JSON.parse(text);
+  } catch {
+    throw new Error('Choose a valid Tab Hub open tabs file');
+  }
+
+  const counts = validateOpenTabsSessionPayload(payload);
+  if (counts.tabs > OPEN_TABS_IMPORT_CONFIRM_THRESHOLD) {
+    const ok = window.confirm(`Open ${counts.tabs} tabs in ${counts.windows} windows?`);
+    if (!ok) return;
+  }
+
+  const response = await chrome.runtime.sendMessage({
+    type: OPEN_TABS_IMPORT_MESSAGE,
+    session: payload,
+  });
+
+  if (!response || !response.ok) {
+    throw new Error(response && response.error ? response.error : 'Could not import open tabs');
+  }
+
+  if (response.details && (
+    (Array.isArray(response.details.skippedTabs) && response.details.skippedTabs.length > 0) ||
+    (Array.isArray(response.details.warnings) && response.details.warnings.length > 0)
+  )) {
+    console.info('[tab-hub] Open tabs import details:', response.details);
+  }
+
+  setMessage(formatOpenTabsImportSummary(response.summary));
+}
+
 async function setTabTreeEnabled(enabled) {
   const store = await getStore();
   store.features.tabTree = {
     ...(store.features.tabTree || {}),
+    enabled: !!enabled,
+  };
+  await saveStore(store);
+  renderState(store);
+}
+
+async function setTabAtlasEnabled(enabled) {
+  const store = await getStore();
+  store.features.tabAtlas = {
+    ...(store.features.tabAtlas || {}),
     enabled: !!enabled,
   };
   await saveStore(store);
@@ -941,17 +1161,20 @@ function setMessage(message) {
 }
 
 function renderState(store) {
-  const enabled = !!(store.features && store.features.tabTree && store.features.tabTree.enabled);
-  const toggle = document.getElementById('tabTreeToggle');
-  const openButton = document.getElementById('openTabTreeButton');
+  const tabTreeEnabled = !!(store.features && store.features.tabTree && store.features.tabTree.enabled);
+  const tabAtlasEnabled = !!(store.features && store.features.tabAtlas && store.features.tabAtlas.enabled);
+  const tabTreeToggle = document.getElementById('tabTreeToggle');
+  const tabAtlasToggle = document.getElementById('tabAtlasToggle');
+  const openTabTreeButton = document.getElementById('openTabTreeButton');
+  const openTabAtlasButton = document.getElementById('openTabAtlasButton');
   const dot = document.getElementById('statusDot');
   const theme = normalizeThemePreference(store.settings && store.settings.theme);
-  if (toggle) toggle.checked = enabled;
-  if (openButton) openButton.disabled = !enabled;
-  if (dot) dot.classList.toggle('off', !enabled);
-  document.querySelectorAll('[data-theme-choice]').forEach(button => {
-    button.classList.toggle('active', button.dataset.themeChoice === theme);
-  });
+  if (tabTreeToggle) tabTreeToggle.checked = tabTreeEnabled;
+  if (tabAtlasToggle) tabAtlasToggle.checked = tabAtlasEnabled;
+  if (openTabTreeButton) openTabTreeButton.disabled = !tabTreeEnabled;
+  if (openTabAtlasButton) openTabAtlasButton.disabled = !tabAtlasEnabled;
+  if (dot) dot.classList.toggle('off', !tabTreeEnabled && !tabAtlasEnabled);
+  document.documentElement.dataset.theme = theme;
 }
 
 function markPopupReady() {
@@ -990,6 +1213,39 @@ async function openTabTree() {
   window.close();
 }
 
+async function openTabAtlas() {
+  const store = await getStore();
+  if (!store.features.tabAtlas.enabled) return;
+
+  const tabAtlasUrl = chrome.runtime.getURL('index.html#tab-atlas');
+  const tabs = await chrome.tabs.query({});
+  const existing = tabs.find(tab => isTabOutPage(tab.url));
+
+  if (existing && existing.id) {
+    await chrome.tabs.update(existing.id, { active: true, url: tabAtlasUrl });
+    if (existing.windowId) await chrome.windows.update(existing.windowId, { focused: true });
+  } else {
+    await chrome.tabs.create({ url: tabAtlasUrl, active: true });
+  }
+
+  window.close();
+}
+
+async function openSettingsPage() {
+  const settingsUrl = chrome.runtime.getURL('index.html#settings');
+  const tabs = await chrome.tabs.query({});
+  const existing = tabs.find(tab => isTabOutPage(tab.url));
+
+  if (existing && existing.id) {
+    await chrome.tabs.update(existing.id, { active: true, url: settingsUrl });
+    if (existing.windowId) await chrome.windows.update(existing.windowId, { focused: true });
+  } else {
+    await chrome.tabs.create({ url: settingsUrl, active: true });
+  }
+
+  window.close();
+}
+
 async function initializePopup() {
   try {
     const store = await getStore();
@@ -1013,6 +1269,17 @@ document.getElementById('tabTreeToggle')?.addEventListener('change', async event
   }
 });
 
+document.getElementById('tabAtlasToggle')?.addEventListener('change', async event => {
+  try {
+    setError('');
+    setMessage('');
+    await setTabAtlasEnabled(event.target.checked);
+  } catch (err) {
+    event.target.checked = !event.target.checked;
+    setError(err && err.message ? err.message : 'Could not update Tab Atlas');
+  }
+});
+
 document.getElementById('openTabTreeButton')?.addEventListener('click', async () => {
   try {
     setError('');
@@ -1020,6 +1287,26 @@ document.getElementById('openTabTreeButton')?.addEventListener('click', async ()
     await openTabTree();
   } catch (err) {
     setError(err && err.message ? err.message : 'Could not open Tab Stash');
+  }
+});
+
+document.getElementById('openTabAtlasButton')?.addEventListener('click', async () => {
+  try {
+    setError('');
+    setMessage('');
+    await openTabAtlas();
+  } catch (err) {
+    setError(err && err.message ? err.message : 'Could not open Tab Atlas');
+  }
+});
+
+document.getElementById('openSettingsButton')?.addEventListener('click', async () => {
+  try {
+    setError('');
+    setMessage('');
+    await openSettingsPage();
+  } catch (err) {
+    setError(err && err.message ? err.message : 'Could not open settings');
   }
 });
 
@@ -1031,6 +1318,25 @@ document.getElementById('exportDataButton')?.addEventListener('click', async () 
   } catch (err) {
     setError(err && err.message ? err.message : 'Could not export data');
   }
+});
+
+document.getElementById('exportOpenTabsButton')?.addEventListener('click', async () => {
+  try {
+    setError('');
+    setMessage('');
+    await exportOpenTabsSession();
+  } catch (err) {
+    setError(err && err.message ? err.message : 'Could not export open tabs');
+  }
+});
+
+document.getElementById('importOpenTabsButton')?.addEventListener('click', () => {
+  setError('');
+  setMessage('');
+  const input = document.getElementById('importOpenTabsInput');
+  if (!input) return;
+  input.value = '';
+  input.click();
 });
 
 document.querySelectorAll('[data-import-mode]').forEach(button => {
@@ -1067,6 +1373,21 @@ document.getElementById('importFileInput')?.addEventListener('change', async eve
     await importDataFromFile(file, pendingImportMode);
   } catch (err) {
     setError(err && err.message ? err.message : 'Could not import data');
+  } finally {
+    event.target.value = '';
+  }
+});
+
+document.getElementById('importOpenTabsInput')?.addEventListener('change', async event => {
+  const file = event.target.files && event.target.files[0];
+  if (!file) return;
+
+  try {
+    setError('');
+    setMessage('');
+    await importOpenTabsSessionFromFile(file);
+  } catch (err) {
+    setError(err && err.message ? err.message : 'Could not import open tabs');
   } finally {
     event.target.value = '';
   }

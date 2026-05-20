@@ -38,11 +38,21 @@ let tabTreeSearchQuery = '';
 let tabAtlasHomeSearchQuery = '';
 let tabAtlasDetailSearchQuery = '';
 let currentAtlasTopicId = '';
+let pendingSettingsImportMode = 'merge';
 const overflowChipCache = new Map();
 const TAB_OUT_STORE_KEY = 'tabOutStore';
 const TAB_OUT_STORE_VERSION = 1;
+const EXPORT_FORMAT = 'tab-hub-backup';
+const EXPORT_FORMAT_VERSION = 1;
+const OPEN_TABS_SESSION_FORMAT = 'tab-hub-open-tabs-session';
+const OPEN_TABS_SESSION_FORMAT_VERSION = 1;
+const OPEN_TABS_IMPORT_MESSAGE = 'tab-hub:import-open-tabs-session';
+const OPEN_TABS_IMPORT_CONFIRM_THRESHOLD = 50;
+const OPEN_TABS_IMPORT_MAX_TABS = 1000;
+const TAB_GROUP_NONE_ID = -1;
 const TAB_ATLAS_MAX_DEPTH = 3;
 const THEME_OPTIONS = ['system', 'light', 'dark'];
+const TAB_GROUP_COLORS = ['grey', 'blue', 'red', 'yellow', 'green', 'pink', 'purple', 'cyan', 'orange'];
 
 function normalizeThemePreference(theme) {
   return THEME_OPTIONS.includes(theme) ? theme : 'system';
@@ -1387,6 +1397,761 @@ async function setThemePreference(theme) {
   applyThemePreference(nextTheme);
 }
 
+function normalizeImportUrlKey(url) {
+  const raw = String(url || '').trim();
+  if (!raw) return '';
+  try { return new URL(raw).toString(); }
+  catch { return raw; }
+}
+
+function normalizeNameKey(name) {
+  return String(name || '').trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+function createImportScopedId(prefix) {
+  if (globalThis.crypto && typeof globalThis.crypto.randomUUID === 'function') {
+    return `${prefix}_${globalThis.crypto.randomUUID()}`;
+  }
+  return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function createUniqueImportId(prefix, existingIds, preferredId) {
+  if (preferredId && !existingIds.has(preferredId)) {
+    existingIds.add(preferredId);
+    return preferredId;
+  }
+
+  let id = createImportScopedId(prefix);
+  while (existingIds.has(id)) id = createImportScopedId(prefix);
+  existingIds.add(id);
+  return id;
+}
+
+function extractImportedStore(payload) {
+  if (!payload || typeof payload !== 'object') {
+    throw new Error('Choose a valid Tab Hub backup file');
+  }
+
+  if (payload.format === EXPORT_FORMAT) {
+    if (!payload.data || typeof payload.data !== 'object') {
+      throw new Error('This backup file is missing Tab Hub data');
+    }
+    return payload.data;
+  }
+
+  if (payload.tabOutStore && typeof payload.tabOutStore === 'object') {
+    return payload.tabOutStore;
+  }
+
+  if (payload.data && typeof payload.data === 'object' && (payload.features || payload.schemaVersion)) {
+    return payload;
+  }
+
+  throw new Error('Choose a valid Tab Hub backup file');
+}
+
+function countStoreData(store) {
+  const normalized = normalizeStore(store);
+  const dashboard = normalized.data.dashboard || {};
+  const tree = normalized.data.tabTree || createDefaultTabTree();
+  const atlas = normalized.data.tabAtlas || createDefaultTabAtlas();
+  const root = tree.nodes.root || { children: [] };
+  const folders = root.children.filter(id => tree.nodes[id] && tree.nodes[id].type === 'folder');
+  const treeTabs = folders.reduce((count, folderId) => {
+    const folder = tree.nodes[folderId];
+    return count + folder.children.filter(childId => tree.nodes[childId] && tree.nodes[childId].type === 'tab').length;
+  }, 0);
+
+  return {
+    favorites: dashboard.favorites.length,
+    savedTabs: dashboard.deferred.filter(item => item && !item.dismissed).length,
+    folders: folders.length,
+    treeTabs,
+    atlasTopics: Object.keys(atlas.topics || {}).length,
+    atlasTabs: Object.keys(atlas.tabs || {}).length,
+  };
+}
+
+function mergeFavorites(targetDashboard, importedDashboard, stats) {
+  const target = Array.isArray(targetDashboard.favorites)
+    ? targetDashboard.favorites.filter(item => item && typeof item.url === 'string')
+    : [];
+  const imported = Array.isArray(importedDashboard.favorites) ? importedDashboard.favorites : [];
+  const existingIds = new Set(target.map(item => item.id).filter(Boolean));
+  const existingUrls = new Set(target.map(item => normalizeImportUrlKey(item.url)).filter(Boolean));
+
+  for (const item of imported) {
+    if (!item || typeof item.url !== 'string') continue;
+    const urlKey = normalizeImportUrlKey(item.url);
+    if (!urlKey || existingUrls.has(urlKey)) continue;
+
+    target.push({
+      ...item,
+      id: createUniqueImportId('fav', existingIds, item.id),
+      url: String(item.url),
+      createdAt: item.createdAt || nowIso(),
+    });
+    existingUrls.add(urlKey);
+    stats.favoritesAdded += 1;
+  }
+
+  targetDashboard.favorites = target;
+}
+
+function mergeSavedTabs(targetDashboard, importedDashboard, stats) {
+  const target = Array.isArray(targetDashboard.deferred)
+    ? targetDashboard.deferred.filter(item => item && typeof item.url === 'string')
+    : [];
+  const imported = Array.isArray(importedDashboard.deferred) ? importedDashboard.deferred : [];
+  const existingIds = new Set(target.map(item => item.id).filter(Boolean));
+  const existingUrls = new Set(target.map(item => normalizeImportUrlKey(item.url)).filter(Boolean));
+
+  for (const item of imported) {
+    if (!item || typeof item.url !== 'string' || item.dismissed) continue;
+    const urlKey = normalizeImportUrlKey(item.url);
+    if (!urlKey || existingUrls.has(urlKey)) continue;
+
+    target.push({
+      ...item,
+      id: createUniqueImportId('saved', existingIds, item.id),
+      url: String(item.url),
+      title: item.title || item.url,
+      savedAt: item.savedAt || nowIso(),
+      completed: !!item.completed,
+      dismissed: false,
+    });
+    existingUrls.add(urlKey);
+    stats.savedTabsAdded += 1;
+  }
+
+  targetDashboard.deferred = target;
+}
+
+function upsertImportedTreeTab(tree, folder, importedTab, stats) {
+  if (!importedTab || typeof importedTab.url !== 'string') return;
+  const urlKey = normalizeImportUrlKey(importedTab.url);
+  if (!urlKey) return;
+
+  const sameIds = folder.children.filter(childId => {
+    const node = tree.nodes[childId];
+    return node && node.type === 'tab' && normalizeImportUrlKey(node.url) === urlKey;
+  });
+  const timestamp = importedTab.updatedAt || nowIso();
+  const name = String(importedTab.name || importedTab.url || 'Untitled tab');
+
+  if (sameIds.length > 0) {
+    const keepId = sameIds[sameIds.length - 1];
+    const existing = tree.nodes[keepId];
+    existing.name = name;
+    existing.url = String(importedTab.url);
+    existing.updatedAt = timestamp;
+    folder.children = folder.children.filter(childId => {
+      if (childId === keepId) return false;
+      if (sameIds.includes(childId)) {
+        delete tree.nodes[childId];
+        return false;
+      }
+      return true;
+    });
+    folder.children.push(keepId);
+    folder.expanded = true;
+    folder.updatedAt = timestamp;
+    stats.treeTabsUpdated += 1;
+    return;
+  }
+
+  const id = createUniqueTreeNodeId(tree.nodes, importedTab.id);
+  tree.nodes[id] = {
+    id,
+    type: 'tab',
+    name,
+    url: String(importedTab.url),
+    createdAt: importedTab.createdAt || timestamp,
+    updatedAt: timestamp,
+  };
+  folder.children.push(id);
+  folder.expanded = true;
+  folder.updatedAt = timestamp;
+  stats.treeTabsAdded += 1;
+}
+
+function mergeTabTree(targetStore, importedStore, stats) {
+  const targetTree = normalizeTabTree(targetStore.data.tabTree);
+  const importedTree = normalizeTabTree(importedStore.data.tabTree);
+  const targetRoot = targetTree.nodes.root;
+  const folderByName = new Map();
+
+  for (const folderId of targetRoot.children) {
+    const folder = targetTree.nodes[folderId];
+    if (!folder || folder.type !== 'folder') continue;
+    const key = normalizeNameKey(folder.name);
+    if (key && !folderByName.has(key)) folderByName.set(key, folderId);
+  }
+
+  for (const importedFolderId of importedTree.nodes.root.children) {
+    const importedFolder = importedTree.nodes[importedFolderId];
+    if (!importedFolder || importedFolder.type !== 'folder') continue;
+    const key = normalizeNameKey(importedFolder.name);
+    let targetFolderId = key ? folderByName.get(key) : '';
+
+    if (!targetFolderId) {
+      targetFolderId = createUniqueTreeNodeId(targetTree.nodes, importedFolder.id);
+      targetTree.nodes[targetFolderId] = {
+        id: targetFolderId,
+        type: 'folder',
+        name: String(importedFolder.name || 'Untitled folder'),
+        children: [],
+        expanded: typeof importedFolder.expanded === 'boolean' ? importedFolder.expanded : true,
+        createdAt: importedFolder.createdAt || nowIso(),
+        updatedAt: importedFolder.updatedAt || importedFolder.createdAt || nowIso(),
+      };
+      targetRoot.children.push(targetFolderId);
+      if (key) folderByName.set(key, targetFolderId);
+      stats.foldersAdded += 1;
+    }
+
+    const targetFolder = targetTree.nodes[targetFolderId];
+    for (const importedTabId of importedFolder.children) {
+      upsertImportedTreeTab(targetTree, targetFolder, importedTree.nodes[importedTabId], stats);
+    }
+  }
+
+  targetRoot.updatedAt = nowIso();
+  targetStore.data.tabTree = normalizeTabTree(targetTree);
+}
+
+function upsertImportedAtlasTab(atlas, targetTopic, importedTab, stats) {
+  if (!importedTab || typeof importedTab.url !== 'string') return;
+  const urlKey = normalizeImportUrlKey(importedTab.url);
+  if (!urlKey) return;
+
+  const sameIds = targetTopic.tabIds.filter(tabId => {
+    const tab = atlas.tabs[tabId];
+    return tab && normalizeImportUrlKey(tab.url) === urlKey;
+  });
+  const timestamp = importedTab.updatedAt || nowIso();
+  const title = String(importedTab.title || importedTab.name || importedTab.url || 'Untitled tab');
+
+  if (sameIds.length > 0) {
+    const keepId = sameIds[sameIds.length - 1];
+    const existing = atlas.tabs[keepId];
+    existing.title = title;
+    existing.url = String(importedTab.url);
+    existing.note = String(importedTab.note || '');
+    existing.updatedAt = timestamp;
+    targetTopic.tabIds = targetTopic.tabIds.filter(tabId => {
+      if (tabId === keepId) return false;
+      if (sameIds.includes(tabId)) {
+        delete atlas.tabs[tabId];
+        return false;
+      }
+      return true;
+    });
+    targetTopic.items = (Array.isArray(targetTopic.items) ? targetTopic.items : []).filter(item =>
+      item.type !== 'tab' || !sameIds.includes(item.id)
+    );
+    insertAtlasTopicItem(targetTopic, 'tab', keepId);
+    targetTopic.updatedAt = timestamp;
+    stats.atlasTabsUpdated += 1;
+    return;
+  }
+
+  const id = createUniqueAtlasId(atlas.tabs, importedTab.id, createAtlasSourceId);
+  atlas.tabs[id] = {
+    id,
+    title,
+    url: String(importedTab.url),
+    note: String(importedTab.note || ''),
+    createdAt: importedTab.createdAt || timestamp,
+    updatedAt: timestamp,
+  };
+  insertAtlasTopicItem(targetTopic, 'tab', id);
+  targetTopic.updatedAt = timestamp;
+  stats.atlasTabsAdded += 1;
+}
+
+function mergeAtlasTopicChildren(targetAtlas, importedAtlas, targetTopic, importedTopic, stats, importedToTargetTopicIds) {
+  const childByName = new Map();
+  for (const childId of targetTopic.children) {
+    const child = targetAtlas.topics[childId];
+    if (!child) continue;
+    const key = normalizeNameKey(child.name);
+    if (key && !childByName.has(key)) childByName.set(key, childId);
+  }
+
+  const importedItems = Array.isArray(importedTopic.items) && importedTopic.items.length > 0
+    ? importedTopic.items
+    : [
+        ...importedTopic.tabIds.map(id => createAtlasItem('tab', id)),
+        ...importedTopic.children.map(id => createAtlasItem('topic', id)),
+      ];
+
+  for (const item of importedItems) {
+    if (!item || item.type === 'tab') {
+      if (item) upsertImportedAtlasTab(targetAtlas, targetTopic, importedAtlas.tabs[item.id], stats);
+      continue;
+    }
+
+    if (item.type !== 'topic') continue;
+    const importedChild = importedAtlas.topics[item.id];
+    if (!importedChild) continue;
+    const key = normalizeNameKey(importedChild.name);
+    let targetChildId = key ? childByName.get(key) : '';
+    if (!targetChildId) {
+      targetChildId = createUniqueAtlasId(targetAtlas.topics, importedChild.id, createAtlasTopicId);
+      targetAtlas.topics[targetChildId] = {
+        id: targetChildId,
+        name: String(importedChild.name || 'Untitled topic'),
+        note: String(importedChild.note || ''),
+        children: [],
+        tabIds: [],
+        items: [],
+        expanded: typeof importedChild.expanded === 'boolean' ? importedChild.expanded : true,
+        createdAt: importedChild.createdAt || nowIso(),
+        updatedAt: importedChild.updatedAt || importedChild.createdAt || nowIso(),
+      };
+      if (key) childByName.set(key, targetChildId);
+      stats.atlasTopicsAdded += 1;
+    } else {
+      const targetChild = targetAtlas.topics[targetChildId];
+      targetChild.note = String(importedChild.note || targetChild.note || '');
+      targetChild.updatedAt = importedChild.updatedAt || targetChild.updatedAt || nowIso();
+    }
+    importedToTargetTopicIds.set(importedChild.id, targetChildId);
+    insertAtlasTopicItem(targetTopic, 'topic', targetChildId);
+    mergeAtlasTopicChildren(targetAtlas, importedAtlas, targetAtlas.topics[targetChildId], importedChild, stats, importedToTargetTopicIds);
+  }
+}
+
+function mergeTabAtlas(targetStore, importedStore, stats) {
+  const targetAtlas = normalizeTabAtlas(targetStore.data.tabAtlas);
+  const importedAtlas = normalizeTabAtlas(importedStore.data.tabAtlas);
+  const rootByName = new Map();
+  const importedToTargetTopicIds = new Map();
+
+  for (const topicId of targetAtlas.rootTopicIds) {
+    const topic = targetAtlas.topics[topicId];
+    if (!topic) continue;
+    const key = normalizeNameKey(topic.name);
+    if (key && !rootByName.has(key)) rootByName.set(key, topicId);
+  }
+
+  for (const importedRootId of importedAtlas.rootTopicIds) {
+    const importedTopic = importedAtlas.topics[importedRootId];
+    if (!importedTopic) continue;
+    const key = normalizeNameKey(importedTopic.name);
+    let targetTopicId = key ? rootByName.get(key) : '';
+
+    if (!targetTopicId) {
+      targetTopicId = createUniqueAtlasId(targetAtlas.topics, importedTopic.id, createAtlasTopicId);
+      targetAtlas.topics[targetTopicId] = {
+        id: targetTopicId,
+        name: String(importedTopic.name || 'Untitled topic'),
+        note: String(importedTopic.note || ''),
+        children: [],
+        tabIds: [],
+        items: [],
+        expanded: typeof importedTopic.expanded === 'boolean' ? importedTopic.expanded : true,
+        createdAt: importedTopic.createdAt || nowIso(),
+        updatedAt: importedTopic.updatedAt || importedTopic.createdAt || nowIso(),
+      };
+      targetAtlas.rootTopicIds.push(targetTopicId);
+      if (key) rootByName.set(key, targetTopicId);
+      stats.atlasTopicsAdded += 1;
+    } else {
+      const targetTopic = targetAtlas.topics[targetTopicId];
+      targetTopic.note = String(importedTopic.note || targetTopic.note || '');
+      targetTopic.updatedAt = importedTopic.updatedAt || targetTopic.updatedAt || nowIso();
+    }
+    importedToTargetTopicIds.set(importedTopic.id, targetTopicId);
+    mergeAtlasTopicChildren(targetAtlas, importedAtlas, targetAtlas.topics[targetTopicId], importedTopic, stats, importedToTargetTopicIds);
+  }
+
+  const mergedRecent = [
+    ...(Array.isArray(targetAtlas.recentTopicIds) ? targetAtlas.recentTopicIds : []),
+    ...(Array.isArray(importedAtlas.recentTopicIds) ? importedAtlas.recentTopicIds : [])
+      .map(topicId => importedToTargetTopicIds.get(topicId))
+      .filter(Boolean),
+  ];
+  targetAtlas.recentTopicIds = mergedRecent
+    .filter((topicId, index, ids) => targetAtlas.topics[topicId] && ids.indexOf(topicId) === index)
+    .slice(0, 5);
+
+  targetStore.data.tabAtlas = normalizeTabAtlas(targetAtlas);
+}
+
+function mergeStores(targetStore, importedStore) {
+  const importedHadTheme = !!(importedStore && importedStore.settings && THEME_OPTIONS.includes(importedStore.settings.theme));
+  const target = normalizeStore(targetStore);
+  const imported = normalizeStore(importedStore);
+  const stats = {
+    favoritesAdded: 0,
+    savedTabsAdded: 0,
+    foldersAdded: 0,
+    treeTabsAdded: 0,
+    treeTabsUpdated: 0,
+    atlasTopicsAdded: 0,
+    atlasTabsAdded: 0,
+    atlasTabsUpdated: 0,
+  };
+
+  target.features = {
+    ...target.features,
+    ...imported.features,
+    tabTree: {
+      ...(target.features.tabTree || {}),
+      ...(imported.features.tabTree || {}),
+    },
+    tabAtlas: {
+      ...(target.features.tabAtlas || {}),
+      ...(imported.features.tabAtlas || {}),
+    },
+  };
+  target.settings = {
+    ...target.settings,
+    ...(importedHadTheme ? imported.settings : {}),
+    theme: importedHadTheme
+      ? normalizeThemePreference(imported.settings && imported.settings.theme)
+      : normalizeThemePreference(target.settings && target.settings.theme),
+  };
+
+  mergeFavorites(target.data.dashboard, imported.data.dashboard, stats);
+  mergeSavedTabs(target.data.dashboard, imported.data.dashboard, stats);
+  mergeTabTree(target, imported, stats);
+  mergeTabAtlas(target, imported, stats);
+  return { store: target, stats };
+}
+
+function formatImportStats(stats, mode) {
+  if (mode === 'replace') {
+    return `Replaced data: ${stats.favorites} sites, ${stats.savedTabs} saved tabs, ${stats.folders} folders, ${stats.treeTabs} stash links, ${stats.atlasTopics} atlas topics, ${stats.atlasTabs} atlas tabs.`;
+  }
+
+  return `Merged data: +${stats.favoritesAdded} sites, +${stats.savedTabsAdded} saved tabs, +${stats.foldersAdded} folders, +${stats.treeTabsAdded} stash links, ${stats.treeTabsUpdated} stash updated, +${stats.atlasTopicsAdded} atlas topics, +${stats.atlasTabsAdded} atlas tabs, ${stats.atlasTabsUpdated} atlas updated.`;
+}
+
+function createExportEnvelope(store) {
+  const manifest = chrome.runtime && chrome.runtime.getManifest ? chrome.runtime.getManifest() : { version: '1.0.0' };
+  return {
+    format: EXPORT_FORMAT,
+    formatVersion: EXPORT_FORMAT_VERSION,
+    exportedAt: nowIso(),
+    app: {
+      name: 'Tab Hub',
+      version: manifest.version || '1.0.0',
+    },
+    data: normalizeStore(store),
+  };
+}
+
+function downloadJsonFile(filename, data) {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  link.rel = 'noopener';
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function normalizeTabGroupColor(color) {
+  return TAB_GROUP_COLORS.includes(color) ? color : 'grey';
+}
+
+function detectBrowserName() {
+  const ua = navigator.userAgent || '';
+  if (/\bEdg\//.test(ua)) return 'Microsoft Edge';
+  if (/\bChrome\//.test(ua)) return 'Google Chrome';
+  if (/\bChromium\//.test(ua)) return 'Chromium';
+  return 'Chromium Browser';
+}
+
+function getExtensionVersion() {
+  const manifest = chrome.runtime && chrome.runtime.getManifest ? chrome.runtime.getManifest() : { version: '1.0.0' };
+  return manifest.version || '1.0.0';
+}
+
+function isGroupedTab(tab) {
+  return Number.isInteger(tab && tab.groupId) && tab.groupId !== TAB_GROUP_NONE_ID && tab.groupId >= 0;
+}
+
+async function getNormalBrowserWindows() {
+  try {
+    return await chrome.windows.getAll({ populate: true, windowTypes: ['normal'] });
+  } catch {
+    const windows = await chrome.windows.getAll({ populate: true });
+    return windows.filter(item => !item.type || item.type === 'normal');
+  }
+}
+
+async function getTabGroupsById() {
+  if (!chrome.tabGroups || typeof chrome.tabGroups.query !== 'function') return new Map();
+
+  try {
+    const groups = await chrome.tabGroups.query({});
+    return new Map(groups.map(group => [group.id, group]));
+  } catch (err) {
+    console.warn('[tab-hub] Could not read tab groups for export:', err);
+    return new Map();
+  }
+}
+
+function createOpenTabsWindowSnapshot(sourceWindow, sourceIndex, groupsById) {
+  const tabs = Array.isArray(sourceWindow.tabs)
+    ? [...sourceWindow.tabs].sort((a, b) => (a.index || 0) - (b.index || 0))
+    : [];
+  const groupKeyByNativeId = new Map();
+  const nativeGroupIds = [];
+
+  for (const tab of tabs) {
+    if (!isGroupedTab(tab) || groupKeyByNativeId.has(tab.groupId)) continue;
+    nativeGroupIds.push(tab.groupId);
+    groupKeyByNativeId.set(tab.groupId, `w${sourceIndex}-g${nativeGroupIds.length - 1}`);
+  }
+
+  const groups = nativeGroupIds.map(groupId => {
+    const group = groupsById.get(groupId) || {};
+    const firstTab = tabs.find(tab => tab.groupId === groupId);
+    return {
+      key: groupKeyByNativeId.get(groupId),
+      title: String(group.title || ''),
+      color: normalizeTabGroupColor(group.color),
+      collapsed: typeof group.collapsed === 'boolean' ? group.collapsed : false,
+      firstTabIndex: firstTab && Number.isFinite(firstTab.index) ? firstTab.index : 0,
+    };
+  });
+
+  return {
+    key: `w${sourceIndex}`,
+    index: Number.isFinite(sourceWindow.index) ? sourceWindow.index : sourceIndex,
+    focused: !!sourceWindow.focused,
+    groups,
+    tabs: tabs.map((tab, fallbackIndex) => ({
+      title: String(tab.title || ''),
+      url: String(tab.url || ''),
+      index: Number.isFinite(tab.index) ? tab.index : fallbackIndex,
+      active: !!tab.active,
+      pinned: !!tab.pinned,
+      groupKey: isGroupedTab(tab) ? (groupKeyByNativeId.get(tab.groupId) || '') : '',
+    })),
+  };
+}
+
+async function createOpenTabsSessionEnvelope() {
+  const [browserWindows, groupsById] = await Promise.all([
+    getNormalBrowserWindows(),
+    getTabGroupsById(),
+  ]);
+  const normalWindows = browserWindows
+    .filter(item => item && !item.incognito && (!item.type || item.type === 'normal'))
+    .sort((a, b) => (a.index || 0) - (b.index || 0));
+
+  return {
+    format: OPEN_TABS_SESSION_FORMAT,
+    formatVersion: OPEN_TABS_SESSION_FORMAT_VERSION,
+    exportedAt: nowIso(),
+    app: {
+      name: 'Tab Hub',
+      version: getExtensionVersion(),
+    },
+    source: {
+      browser: detectBrowserName(),
+      userAgent: navigator.userAgent || '',
+      extensionVersion: getExtensionVersion(),
+    },
+    windows: normalWindows.map((item, index) => createOpenTabsWindowSnapshot(item, index, groupsById)),
+  };
+}
+
+function countOpenTabsSession(session) {
+  const windows = Array.isArray(session && session.windows) ? session.windows : [];
+  return windows.reduce((counts, item) => {
+    const tabs = Array.isArray(item && item.tabs) ? item.tabs : [];
+    const groups = Array.isArray(item && item.groups) ? item.groups : [];
+    counts.windows += 1;
+    counts.tabs += tabs.length;
+    counts.groups += groups.length;
+    return counts;
+  }, { windows: 0, tabs: 0, groups: 0 });
+}
+
+function validateOpenTabsSessionPayload(payload) {
+  if (!payload || typeof payload !== 'object') {
+    throw new Error('Choose a valid Tab Hub open tabs file');
+  }
+
+  if (payload.format !== OPEN_TABS_SESSION_FORMAT) {
+    throw new Error('Choose a Tab Hub open tabs export file');
+  }
+
+  if (payload.formatVersion !== OPEN_TABS_SESSION_FORMAT_VERSION) {
+    throw new Error('This open tabs export version is not supported');
+  }
+
+  if (!Array.isArray(payload.windows)) {
+    throw new Error('This open tabs export is missing window data');
+  }
+
+  const counts = countOpenTabsSession(payload);
+  if (counts.tabs > OPEN_TABS_IMPORT_MAX_TABS) {
+    throw new Error(`This file has ${counts.tabs} tabs. Import up to ${OPEN_TABS_IMPORT_MAX_TABS} at a time.`);
+  }
+
+  return counts;
+}
+
+function formatOpenTabsImportSummary(summary) {
+  if (!summary || !summary.tabsOpened) return 'No restorable tabs found in this file.';
+  if (!summary.nativeGroupsSupported && summary.groupsOpenedUngrouped > 0) {
+    const skipped = summary.skippedTabs || summary.failedTabs
+      ? `, skipped ${(summary.skippedTabs || 0) + (summary.failedTabs || 0)} pages`
+      : '';
+    return `Opened ${summary.tabsOpened} tabs without native groups${skipped}.`;
+  }
+
+  const skippedCount = (summary.skippedTabs || 0) + (summary.failedTabs || 0);
+  const skipped = skippedCount > 0 ? `, skipped ${skippedCount} pages` : '';
+  return `Opened ${summary.tabsOpened} tabs, restored ${summary.groupsRestored || 0} groups${skipped}.`;
+}
+
+async function exportData() {
+  const store = await getTabOutStore();
+  const envelope = createExportEnvelope(store);
+  const date = new Date().toISOString().slice(0, 10);
+  downloadJsonFile(`tab-hub-backup-${date}.json`, envelope);
+  const counts = countStoreData(store);
+  setSettingsMessage(`Exported ${counts.favorites} sites, ${counts.savedTabs} saved tabs, ${counts.folders} folders, ${counts.treeTabs} stash links, ${counts.atlasTopics} atlas topics, ${counts.atlasTabs} atlas tabs.`);
+}
+
+async function exportOpenTabsSession() {
+  const envelope = await createOpenTabsSessionEnvelope();
+  const date = new Date().toISOString().slice(0, 10);
+  downloadJsonFile(`tab-hub-open-tabs-${date}.json`, envelope);
+  const counts = countOpenTabsSession(envelope);
+  setSettingsMessage(`Exported ${counts.tabs} tabs in ${counts.windows} windows.`);
+}
+
+async function refreshAfterStoreTransfer() {
+  await renderAppShell();
+  if (currentView === 'tab-tree' && !await isTabTreeEnabled()) await showDashboardView();
+  else if (currentView === 'tab-tree') await renderTabTree();
+  else if (currentView === 'tab-atlas' && !await isTabAtlasEnabled()) await showDashboardView();
+  else if (currentView === 'tab-atlas') await renderTabAtlas();
+  else await renderDashboard();
+  await syncSettingsControls();
+}
+
+async function importDataFromFile(file, mode) {
+  if (!file) return;
+  const text = await file.text();
+  let payload;
+  try {
+    payload = JSON.parse(text);
+  } catch {
+    throw new Error('Choose a valid JSON backup file');
+  }
+
+  const rawImportedStore = extractImportedStore(payload);
+  const importedStore = normalizeStore(rawImportedStore);
+  if (mode === 'replace') {
+    const ok = window.confirm('Replace all Tab Hub data in this browser with the selected backup?');
+    if (!ok) return;
+    const saved = await saveTabOutStore(importedStore);
+    applyThemePreference(saved.settings && saved.settings.theme);
+    await refreshAfterStoreTransfer();
+    setSettingsMessage(formatImportStats(countStoreData(saved), 'replace'));
+    return;
+  }
+
+  const currentStore = await getTabOutStore();
+  const { store, stats } = mergeStores(currentStore, rawImportedStore);
+  const saved = await saveTabOutStore(store);
+  applyThemePreference(saved.settings && saved.settings.theme);
+  await refreshAfterStoreTransfer();
+  setSettingsMessage(formatImportStats(stats, 'merge'));
+}
+
+async function importOpenTabsSessionFromFile(file) {
+  if (!file) return;
+  const text = await file.text();
+  let payload;
+  try {
+    payload = JSON.parse(text);
+  } catch {
+    throw new Error('Choose a valid Tab Hub open tabs file');
+  }
+
+  const counts = validateOpenTabsSessionPayload(payload);
+  if (counts.tabs > OPEN_TABS_IMPORT_CONFIRM_THRESHOLD) {
+    const ok = window.confirm(`Open ${counts.tabs} tabs in ${counts.windows} windows?`);
+    if (!ok) return;
+  }
+
+  const response = await chrome.runtime.sendMessage({
+    type: OPEN_TABS_IMPORT_MESSAGE,
+    session: payload,
+  });
+
+  if (!response || !response.ok) {
+    throw new Error(response && response.error ? response.error : 'Could not import open tabs');
+  }
+
+  if (response.details && (
+    (Array.isArray(response.details.skippedTabs) && response.details.skippedTabs.length > 0) ||
+    (Array.isArray(response.details.warnings) && response.details.warnings.length > 0)
+  )) {
+    console.info('[tab-hub] Open tabs import details:', response.details);
+  }
+
+  setSettingsMessage(formatOpenTabsImportSummary(response.summary));
+}
+
+function setSettingsMessage(message) {
+  const notice = document.getElementById('settingsMessage');
+  const error = document.getElementById('settingsError');
+  if (message && error) error.style.display = 'none';
+  if (!notice) return;
+  notice.textContent = message || '';
+  notice.style.display = message ? 'block' : 'none';
+}
+
+function setSettingsError(message) {
+  const error = document.getElementById('settingsError');
+  const notice = document.getElementById('settingsMessage');
+  if (message && notice) notice.style.display = 'none';
+  if (!error) return;
+  error.textContent = message || '';
+  error.style.display = message ? 'block' : 'none';
+}
+
+async function syncSettingsControls() {
+  const input = document.getElementById('tabTreeEnabledInput');
+  const atlasInput = document.getElementById('tabAtlasEnabledInput');
+  const themeSelect = document.getElementById('themePreferenceInput');
+  if (input) input.checked = await isTabTreeEnabled();
+  if (atlasInput) atlasInput.checked = await isTabAtlasEnabled();
+  if (themeSelect) themeSelect.value = await getThemePreference();
+}
+
+async function openSettingsModal(options = {}) {
+  const modal = document.getElementById('settingsModal');
+  await syncSettingsControls();
+  if (options.clearMessage !== false) {
+    setSettingsMessage('');
+    setSettingsError('');
+  }
+  if (modal) modal.style.display = 'flex';
+}
+
+function closeSettingsModal() {
+  const modal = document.getElementById('settingsModal');
+  if (modal) modal.style.display = 'none';
+  if (location.hash === '#settings') history.replaceState(null, '', location.pathname);
+}
+
 function findTreeParent(tree, nodeId) {
   for (const node of Object.values(tree.nodes)) {
     if (node.type === 'folder' && node.children.includes(nodeId)) return node;
@@ -2256,6 +3021,11 @@ async function initializeApp() {
   const store = await getTabOutStore();
   applyThemePreference(store.settings && store.settings.theme);
   renderDashboardChrome();
+  if (location.hash === '#settings') {
+    await showDashboardView({ updateHash: false });
+    await openSettingsModal();
+    return;
+  }
   if (location.hash === '#tab-tree' && await isTabTreeEnabled()) {
     await showTabTreeView({ updateHash: false });
     return;
@@ -2270,6 +3040,29 @@ async function initializeApp() {
     return;
   }
   await showDashboardView({ updateHash: false });
+}
+
+async function handleHashNavigation() {
+  if (location.hash === '#settings') {
+    await showDashboardView({ updateHash: false });
+    await openSettingsModal();
+    return;
+  }
+
+  if (location.hash === '#tab-tree' && await isTabTreeEnabled()) {
+    await showTabTreeView({ updateHash: false });
+    return;
+  }
+
+  if (location.hash === '#tab-atlas' && await isTabAtlasEnabled()) {
+    await showTabAtlasHomeView({ updateHash: false });
+    return;
+  }
+
+  if (location.hash.startsWith('#tab-atlas/') && await isTabAtlasEnabled()) {
+    const topicId = decodeURIComponent(location.hash.replace('#tab-atlas/', ''));
+    await showTabAtlasDetailView(topicId, { updateHash: false });
+  }
 }
 
 if (window.matchMedia) {
@@ -3927,20 +4720,12 @@ document.addEventListener('click', async (e) => {
   }
 
   if (action === 'open-settings-modal') {
-    const modal = document.getElementById('settingsModal');
-    const input = document.getElementById('tabTreeEnabledInput');
-    const atlasInput = document.getElementById('tabAtlasEnabledInput');
-    const themeSelect = document.getElementById('themePreferenceInput');
-    if (input) input.checked = await isTabTreeEnabled();
-    if (atlasInput) atlasInput.checked = await isTabAtlasEnabled();
-    if (themeSelect) themeSelect.value = await getThemePreference();
-    if (modal) modal.style.display = 'flex';
+    await openSettingsModal();
     return;
   }
 
   if (action === 'close-settings-modal') {
-    const modal = document.getElementById('settingsModal');
-    if (modal) modal.style.display = 'none';
+    closeSettingsModal();
     return;
   }
 
@@ -3951,14 +4736,58 @@ document.addEventListener('click', async (e) => {
     await setTabTreeEnabled(!!(input && input.checked));
     await setTabAtlasEnabled(!!(atlasInput && atlasInput.checked));
     await setThemePreference(themeSelect ? themeSelect.value : 'system');
-    const modal = document.getElementById('settingsModal');
-    if (modal) modal.style.display = 'none';
+    closeSettingsModal();
     await renderAppShell();
     if (currentView === 'tab-tree' && !(input && input.checked)) await showDashboardView();
     else if (currentView === 'tab-tree') await renderTabTree();
     else if (currentView === 'tab-atlas' && !(atlasInput && atlasInput.checked)) await showDashboardView();
     else if (currentView === 'tab-atlas') await renderTabAtlas();
     showToast('Settings saved');
+    return;
+  }
+
+  if (action === 'export-backup') {
+    try {
+      setSettingsMessage('');
+      setSettingsError('');
+      await exportData();
+    } catch (err) {
+      setSettingsError(err && err.message ? err.message : 'Could not export data');
+    }
+    return;
+  }
+
+  if (action === 'import-backup-merge' || action === 'import-backup-replace') {
+    pendingSettingsImportMode = action === 'import-backup-replace' ? 'replace' : 'merge';
+    setSettingsMessage('');
+    setSettingsError('');
+    const input = document.getElementById('settingsImportBackupInput');
+    if (input) {
+      input.value = '';
+      input.click();
+    }
+    return;
+  }
+
+  if (action === 'export-open-tabs') {
+    try {
+      setSettingsMessage('');
+      setSettingsError('');
+      await exportOpenTabsSession();
+    } catch (err) {
+      setSettingsError(err && err.message ? err.message : 'Could not export open tabs');
+    }
+    return;
+  }
+
+  if (action === 'import-open-tabs') {
+    setSettingsMessage('');
+    setSettingsError('');
+    const input = document.getElementById('settingsImportOpenTabsInput');
+    if (input) {
+      input.value = '';
+      input.click();
+    }
     return;
   }
 
@@ -4614,7 +5443,7 @@ document.addEventListener('keydown', (e) => {
   const atlasTopicModal = document.getElementById('atlasTopicModal');
   const atlasTabModal = document.getElementById('atlasTabModal');
   if (favoriteModal && favoriteModal.style.display !== 'none') closeFavoriteModal();
-  if (settingsModal && settingsModal.style.display !== 'none') settingsModal.style.display = 'none';
+  if (settingsModal && settingsModal.style.display !== 'none') closeSettingsModal();
   if (tabModal && tabModal.style.display !== 'none') closeTreeTabModal();
   if (atlasAddModal && atlasAddModal.style.display !== 'none') closeAtlasAddModal();
   if (atlasTopicModal && atlasTopicModal.style.display !== 'none') closeAtlasTopicModal();
@@ -4623,7 +5452,7 @@ document.addEventListener('keydown', (e) => {
 
 document.addEventListener('click', (e) => {
   if (e.target && e.target.id === 'favoriteModal') closeFavoriteModal();
-  if (e.target && e.target.id === 'settingsModal') e.target.style.display = 'none';
+  if (e.target && e.target.id === 'settingsModal') closeSettingsModal();
   if (e.target && e.target.id === 'treeTabModal') closeTreeTabModal();
   if (e.target && e.target.id === 'atlasAddModal') closeAtlasAddModal();
   if (e.target && e.target.id === 'atlasTopicModal') closeAtlasTopicModal();
@@ -4947,6 +5776,41 @@ document.addEventListener('drop', async (e) => {
   if (!moved) return;
   await renderFavoritesSection();
   showToast('Order updated');
+});
+
+
+document.getElementById('settingsImportBackupInput')?.addEventListener('change', async event => {
+  const file = event.target.files && event.target.files[0];
+  if (!file) return;
+
+  try {
+    setSettingsMessage('');
+    setSettingsError('');
+    await importDataFromFile(file, pendingSettingsImportMode);
+  } catch (err) {
+    setSettingsError(err && err.message ? err.message : 'Could not import data');
+  } finally {
+    event.target.value = '';
+  }
+});
+
+document.getElementById('settingsImportOpenTabsInput')?.addEventListener('change', async event => {
+  const file = event.target.files && event.target.files[0];
+  if (!file) return;
+
+  try {
+    setSettingsMessage('');
+    setSettingsError('');
+    await importOpenTabsSessionFromFile(file);
+  } catch (err) {
+    setSettingsError(err && err.message ? err.message : 'Could not import open tabs');
+  } finally {
+    event.target.value = '';
+  }
+});
+
+window.addEventListener('hashchange', () => {
+  void handleHashNavigation();
 });
 
 

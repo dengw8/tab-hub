@@ -6,9 +6,8 @@
  *
  * Since we no longer have a server, we query chrome.tabs directly.
  * The badge counts real web tabs (skipping chrome:// and extension pages).
- * It also owns the Tab Stash context-menu entries. Existing folders are
- * direct submenu actions; creating a new folder injects a small one-off
- * modal into the current page when Chrome allows it.
+ * It also owns context-menu flows and browser-level side effects such as
+ * restoring an exported open-tabs session into new windows and tab groups.
  *
  * Color coding gives a quick at-a-glance health signal:
  *   Green  (#3d7a4a) → 1–10 tabs  (focused, manageable)
@@ -26,10 +25,15 @@ const TAB_ATLAS_CONTEXT_MENU_ID = 'tab-out-add-current-page-atlas';
 const TAB_TREE_ALLOWED_PROTOCOLS = ['http:', 'https:', 'chrome:', 'chrome-extension:', 'about:', 'file:'];
 const TAB_TREE_CREATE_FOLDER_MESSAGE = 'tab-out:create-folder-and-add-current-page';
 const TAB_ATLAS_ADD_CURRENT_PAGE_MESSAGE = 'tab-out:add-current-page-to-atlas';
+const OPEN_TABS_IMPORT_MESSAGE = 'tab-hub:import-open-tabs-session';
+const OPEN_TABS_SESSION_FORMAT = 'tab-hub-open-tabs-session';
+const OPEN_TABS_SESSION_FORMAT_VERSION = 1;
+const OPEN_TABS_IMPORT_MAX_TABS = 1000;
 const TAB_ATLAS_MAX_DEPTH = 3;
 const TAB_ATLAS_RECENT_LIMIT = 5;
 const TAB_ATLAS_DEFAULT_TOPIC_NAME = 'Default';
 const THEME_OPTIONS = ['system', 'light', 'dark'];
+const TAB_GROUP_COLORS = ['grey', 'blue', 'red', 'yellow', 'green', 'pink', 'purple', 'cyan', 'orange'];
 
 // ─── Badge updater ────────────────────────────────────────────────────────────
 
@@ -2016,6 +2020,421 @@ async function openAtlasAddFlow(tab) {
   }
 }
 
+function isPlainObject(value) {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function limitText(value, maxLength) {
+  return String(value || '').slice(0, maxLength);
+}
+
+function normalizeTabGroupColor(color) {
+  return TAB_GROUP_COLORS.includes(color) ? color : 'grey';
+}
+
+function compareSessionIndexes(a, b) {
+  return (Number.isFinite(a.index) ? a.index : 0) - (Number.isFinite(b.index) ? b.index : 0);
+}
+
+function normalizeOpenTabsSessionPayload(payload) {
+  if (!isPlainObject(payload)) {
+    throw new Error('Choose a valid Tab Hub open tabs file');
+  }
+
+  if (payload.format !== OPEN_TABS_SESSION_FORMAT) {
+    throw new Error('Choose a Tab Hub open tabs export file');
+  }
+
+  if (payload.formatVersion !== OPEN_TABS_SESSION_FORMAT_VERSION) {
+    throw new Error('This open tabs export version is not supported');
+  }
+
+  if (!Array.isArray(payload.windows)) {
+    throw new Error('This open tabs export is missing window data');
+  }
+
+  let totalTabs = 0;
+  const windows = payload.windows.map((rawWindow, windowIndex) => {
+    const sourceWindow = isPlainObject(rawWindow) ? rawWindow : {};
+    const rawGroups = Array.isArray(sourceWindow.groups) ? sourceWindow.groups : [];
+    const seenGroupKeys = new Set();
+    const groups = rawGroups
+      .filter(isPlainObject)
+      .map((group, groupIndex) => ({
+        key: limitText(group.key || `w${windowIndex}-g${groupIndex}`, 120),
+        title: limitText(group.title, 120),
+        color: normalizeTabGroupColor(group.color),
+        collapsed: typeof group.collapsed === 'boolean' ? group.collapsed : false,
+        firstTabIndex: Number.isFinite(group.firstTabIndex) ? group.firstTabIndex : groupIndex,
+      }))
+      .filter(group => {
+        if (!group.key || seenGroupKeys.has(group.key)) return false;
+        seenGroupKeys.add(group.key);
+        return true;
+      })
+      .sort((a, b) => a.firstTabIndex - b.firstTabIndex);
+    const groupKeys = new Set(groups.map(group => group.key));
+    const rawTabs = Array.isArray(sourceWindow.tabs) ? sourceWindow.tabs : [];
+    const tabs = rawTabs
+      .filter(isPlainObject)
+      .map((tab, tabIndex) => ({
+        title: limitText(tab.title, 300),
+        url: typeof tab.url === 'string' ? tab.url : '',
+        index: Number.isFinite(tab.index) ? tab.index : tabIndex,
+        active: !!tab.active,
+        pinned: !!tab.pinned,
+        groupKey: typeof tab.groupKey === 'string' && groupKeys.has(tab.groupKey) ? tab.groupKey : '',
+      }))
+      .sort(compareSessionIndexes);
+
+    totalTabs += tabs.length;
+    return {
+      key: limitText(sourceWindow.key || `w${windowIndex}`, 120),
+      index: Number.isFinite(sourceWindow.index) ? sourceWindow.index : windowIndex,
+      focused: !!sourceWindow.focused,
+      groups,
+      tabs,
+    };
+  }).sort(compareSessionIndexes);
+
+  if (totalTabs > OPEN_TABS_IMPORT_MAX_TABS) {
+    throw new Error(`This file has ${totalTabs} tabs. Import up to ${OPEN_TABS_IMPORT_MAX_TABS} at a time.`);
+  }
+
+  return { windows };
+}
+
+function createOpenTabsImportResult(nativeGroupsSupported) {
+  return {
+    summary: {
+      windowsCreated: 0,
+      tabsOpened: 0,
+      groupsRestored: 0,
+      groupsOpenedUngrouped: 0,
+      skippedTabs: 0,
+      failedTabs: 0,
+      warnings: 0,
+      nativeGroupsSupported,
+    },
+    details: {
+      skippedTabs: [],
+      warnings: [],
+    },
+  };
+}
+
+function addOpenTabsSkippedTab(result, tab, reason, failed = false) {
+  if (failed) result.summary.failedTabs += 1;
+  else result.summary.skippedTabs += 1;
+  result.details.skippedTabs.push({
+    url: limitText(tab && tab.url ? tab.url : '', 500),
+    title: limitText(tab && tab.title ? tab.title : '', 160),
+    reason,
+  });
+}
+
+function addOpenTabsWarning(result, message) {
+  result.details.warnings.push(String(message || 'Could not fully restore open tabs'));
+  result.summary.warnings = result.details.warnings.length;
+}
+
+function normalizeRestorableUrlText(url) {
+  return String(url || '').trim();
+}
+
+function isNewTabUrl(url) {
+  const normalized = normalizeRestorableUrlText(url).toLowerCase().replace(/\/+$/, '');
+  return normalized === '' ||
+    normalized === 'chrome://newtab' ||
+    normalized === 'chrome://new-tab-page' ||
+    normalized === 'edge://newtab' ||
+    normalized === 'about:newtab';
+}
+
+function getOpenTabsCreateTarget(tab) {
+  const rawUrl = normalizeRestorableUrlText(tab.url);
+  if (isNewTabUrl(rawUrl)) return { type: 'newtab' };
+
+  let parsed;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    return { type: 'skip', reason: 'URL cannot be restored' };
+  }
+
+  if (parsed.protocol === 'http:' || parsed.protocol === 'https:' || parsed.protocol === 'file:') {
+    return { type: 'url', url: parsed.toString() };
+  }
+
+  if (parsed.protocol === 'about:' && parsed.href.toLowerCase() === 'about:blank') {
+    return { type: 'url', url: 'about:blank' };
+  }
+
+  if (
+    parsed.protocol === 'chrome:' ||
+    parsed.protocol === 'edge:' ||
+    parsed.protocol === 'brave:' ||
+    parsed.protocol === 'vivaldi:' ||
+    parsed.protocol === 'chrome-extension:' ||
+    parsed.protocol === 'devtools:'
+  ) {
+    return { type: 'skip', reason: 'Browser internal page cannot be restored across browsers' };
+  }
+
+  return { type: 'skip', reason: 'URL type is not supported' };
+}
+
+async function updateImportedTabPinnedState(tabId, pinned, result, tab) {
+  if (!pinned) return;
+  try {
+    await chrome.tabs.update(tabId, { pinned: true });
+  } catch (err) {
+    addOpenTabsWarning(result, `Could not pin "${tab.title || tab.url || 'tab'}": ${err && err.message ? err.message : err}`);
+  }
+}
+
+async function applyTargetToReusableTab(tabId, target) {
+  if (target.type === 'newtab') return tabId;
+  await chrome.tabs.update(tabId, { url: target.url, active: false });
+  return tabId;
+}
+
+async function createTargetTab(windowId, target) {
+  const createProperties = {
+    windowId,
+    active: false,
+  };
+  if (target.type === 'url') createProperties.url = target.url;
+  const tab = await chrome.tabs.create(createProperties);
+  return tab && tab.id;
+}
+
+function getGroupsWithOpenedTabs(windowData, createdRecords) {
+  const recordsByGroupKey = new Map();
+  for (const record of createdRecords) {
+    if (!record.groupKey) continue;
+    if (!recordsByGroupKey.has(record.groupKey)) recordsByGroupKey.set(record.groupKey, []);
+    recordsByGroupKey.get(record.groupKey).push(record);
+  }
+
+  const groupsByKey = new Map(windowData.groups.map(group => [group.key, group]));
+  const orderedGroupKeys = windowData.groups.map(group => group.key);
+  for (const key of recordsByGroupKey.keys()) {
+    if (!groupsByKey.has(key)) {
+      groupsByKey.set(key, {
+        key,
+        title: '',
+        color: 'grey',
+        collapsed: false,
+        firstTabIndex: 0,
+      });
+      orderedGroupKeys.push(key);
+    }
+  }
+
+  return orderedGroupKeys
+    .map(key => ({
+      group: groupsByKey.get(key),
+      records: recordsByGroupKey.get(key) || [],
+    }))
+    .filter(item => item.group && item.records.length > 0);
+}
+
+async function restoreOneOpenTabGroup(targetWindowId, groupData, records, canUpdateGroups, result) {
+  let targetGroupId = null;
+  const tabIds = records.map(record => record.tabId).filter(Boolean);
+
+  try {
+    targetGroupId = await chrome.tabs.group({
+      tabIds,
+      createProperties: { windowId: targetWindowId },
+    });
+  } catch (err) {
+    const unpinnedTabIds = records
+      .filter(record => !record.pinned)
+      .map(record => record.tabId)
+      .filter(Boolean);
+    if (unpinnedTabIds.length > 0 && unpinnedTabIds.length < tabIds.length) {
+      try {
+        targetGroupId = await chrome.tabs.group({
+          tabIds: unpinnedTabIds,
+          createProperties: { windowId: targetWindowId },
+        });
+      } catch (retryErr) {
+        addOpenTabsWarning(result, `Could not restore group "${groupData.title || 'Untitled group'}": ${retryErr && retryErr.message ? retryErr.message : retryErr}`);
+        return false;
+      }
+    } else {
+      addOpenTabsWarning(result, `Could not restore group "${groupData.title || 'Untitled group'}": ${err && err.message ? err.message : err}`);
+      return false;
+    }
+  }
+
+  if (!targetGroupId && targetGroupId !== 0) return false;
+
+  if (canUpdateGroups) {
+    try {
+      await chrome.tabGroups.update(targetGroupId, {
+        title: groupData.title || '',
+        color: normalizeTabGroupColor(groupData.color),
+        collapsed: !!groupData.collapsed,
+      });
+    } catch (err) {
+      addOpenTabsWarning(result, `Could not restore group style "${groupData.title || 'Untitled group'}": ${err && err.message ? err.message : err}`);
+    }
+  } else {
+    addOpenTabsWarning(result, `Could not restore group style "${groupData.title || 'Untitled group'}" in this browser.`);
+  }
+
+  return true;
+}
+
+async function restoreOpenTabGroups(targetWindowId, windowData, createdRecords, result) {
+  const canCreateGroups = !!(chrome.tabs && typeof chrome.tabs.group === 'function');
+  const canUpdateGroups = !!(chrome.tabGroups && typeof chrome.tabGroups.update === 'function');
+  const groupsWithTabs = getGroupsWithOpenedTabs(windowData, createdRecords);
+
+  if (!canCreateGroups) {
+    result.summary.groupsOpenedUngrouped += groupsWithTabs.length;
+    return;
+  }
+
+  for (const item of groupsWithTabs) {
+    const restored = await restoreOneOpenTabGroup(targetWindowId, item.group, item.records, canUpdateGroups, result);
+    if (restored) result.summary.groupsRestored += 1;
+  }
+}
+
+async function restoreActiveTab(createdRecords, result) {
+  const activeRecord = createdRecords.find(record => record.active) || createdRecords[0];
+  if (!activeRecord || !activeRecord.tabId) return;
+
+  try {
+    await chrome.tabs.update(activeRecord.tabId, { active: true });
+  } catch (err) {
+    addOpenTabsWarning(result, `Could not restore active tab: ${err && err.message ? err.message : err}`);
+  }
+}
+
+async function createOpenTabsWindow(windowData, result) {
+  const restorableTabs = [];
+  for (const tab of windowData.tabs) {
+    const target = getOpenTabsCreateTarget(tab);
+    if (target.type === 'skip') {
+      addOpenTabsSkippedTab(result, tab, target.reason);
+      continue;
+    }
+    restorableTabs.push({ source: tab, target });
+  }
+
+  if (restorableTabs.length === 0) return null;
+
+  let targetWindow;
+  try {
+    targetWindow = await chrome.windows.create({
+      focused: false,
+      type: 'normal',
+    });
+  } catch (err) {
+    for (const item of restorableTabs) {
+      addOpenTabsSkippedTab(result, item.source, `Could not create browser window: ${err && err.message ? err.message : err}`, true);
+    }
+    return null;
+  }
+
+  result.summary.windowsCreated += 1;
+
+  const targetWindowId = targetWindow && targetWindow.id;
+  if (!targetWindowId) {
+    for (const item of restorableTabs) {
+      addOpenTabsSkippedTab(result, item.source, 'Could not create browser window', true);
+    }
+    result.summary.windowsCreated = Math.max(0, result.summary.windowsCreated - 1);
+    return null;
+  }
+
+  let reusableTabId = null;
+  try {
+    const initialTabs = await chrome.tabs.query({ windowId: targetWindowId });
+    const firstInitialTab = initialTabs.sort((a, b) => (a.index || 0) - (b.index || 0))[0];
+    reusableTabId = firstInitialTab && firstInitialTab.id ? firstInitialTab.id : null;
+  } catch (err) {
+    addOpenTabsWarning(result, `Could not inspect new import window: ${err && err.message ? err.message : err}`);
+  }
+  const createdRecords = [];
+
+  for (const item of restorableTabs) {
+    let tabId = null;
+    try {
+      if (reusableTabId) {
+        tabId = await applyTargetToReusableTab(reusableTabId, item.target);
+        reusableTabId = null;
+      } else {
+        tabId = await createTargetTab(targetWindowId, item.target);
+      }
+    } catch (err) {
+      addOpenTabsSkippedTab(result, item.source, `Could not open tab: ${err && err.message ? err.message : err}`, true);
+      continue;
+    }
+
+    if (!tabId) {
+      addOpenTabsSkippedTab(result, item.source, 'Could not open tab', true);
+      continue;
+    }
+
+    await updateImportedTabPinnedState(tabId, item.source.pinned, result, item.source);
+    createdRecords.push({
+      tabId,
+      groupKey: item.source.groupKey || '',
+      pinned: !!item.source.pinned,
+      active: !!item.source.active,
+    });
+    result.summary.tabsOpened += 1;
+  }
+
+  if (createdRecords.length === 0) {
+    try {
+      if (targetWindowId) await chrome.windows.remove(targetWindowId);
+      result.summary.windowsCreated = Math.max(0, result.summary.windowsCreated - 1);
+    } catch (err) {
+      addOpenTabsWarning(result, `Could not close empty import window: ${err && err.message ? err.message : err}`);
+    }
+    return null;
+  }
+
+  await restoreOpenTabGroups(targetWindowId, windowData, createdRecords, result);
+  await restoreActiveTab(createdRecords, result);
+
+  return {
+    windowId: targetWindowId,
+    focused: !!windowData.focused,
+  };
+}
+
+async function importOpenTabsSession(session) {
+  const normalized = normalizeOpenTabsSessionPayload(session);
+  const nativeGroupsSupported = !!(chrome.tabs && typeof chrome.tabs.group === 'function');
+  const result = createOpenTabsImportResult(nativeGroupsSupported);
+  const createdWindows = [];
+
+  for (const windowData of normalized.windows) {
+    const createdWindow = await createOpenTabsWindow(windowData, result);
+    if (createdWindow) createdWindows.push(createdWindow);
+  }
+
+  const windowToFocus = createdWindows.find(item => item.focused) || createdWindows[0];
+  if (windowToFocus && windowToFocus.windowId) {
+    try {
+      await chrome.windows.update(windowToFocus.windowId, { focused: true });
+    } catch (err) {
+      addOpenTabsWarning(result, `Could not focus imported window: ${err && err.message ? err.message : err}`);
+    }
+  }
+
+  result.summary.warnings = result.details.warnings.length;
+  return result;
+}
+
 // ─── Event listeners ──────────────────────────────────────────────────────────
 
 // Update badge when the extension is first installed
@@ -2054,6 +2473,17 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!message) return false;
+
+  if (message.type === OPEN_TABS_IMPORT_MESSAGE) {
+    importOpenTabsSession(message.session)
+      .then(result => sendResponse({ ok: true, ...result }))
+      .catch(err => sendResponse({
+        ok: false,
+        error: err && err.message ? err.message : 'Could not import open tabs',
+      }));
+
+    return true;
+  }
 
   if (message.type === TAB_ATLAS_ADD_CURRENT_PAGE_MESSAGE) {
     const tab = {

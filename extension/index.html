@@ -277,7 +277,7 @@
      SETTINGS MODAL — feature switches
      ================================================================ -->
   <div class="modal-backdrop" id="settingsModal" style="display:none">
-    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="settingsModalTitle">
+    <div class="modal-card settings-modal-card" role="dialog" aria-modal="true" aria-labelledby="settingsModalTitle">
       <div class="modal-header">
         <h2 id="settingsModalTitle">Settings</h2>
         <button class="modal-close" type="button" data-action="close-settings-modal" aria-label="Close">
@@ -288,33 +288,69 @@
         </button>
       </div>
 
-      <label class="settings-toggle">
-        <input type="checkbox" id="tabTreeEnabledInput">
-        <span>
-          <strong>Tab Stash</strong>
-          <small>Show the temporary stash feature in Tab Hub.</small>
-        </span>
-      </label>
+      <div class="settings-section">
+        <h3>Features</h3>
+        <label class="settings-toggle">
+          <input type="checkbox" id="tabTreeEnabledInput">
+          <span>
+            <strong>Tab Stash</strong>
+            <small>Show temporary folders for links.</small>
+          </span>
+        </label>
 
-      <label class="settings-toggle">
-        <input type="checkbox" id="tabAtlasEnabledInput">
-        <span>
-          <strong>Tab Atlas</strong>
-          <small>Show the knowledge map feature in Tab Hub.</small>
-        </span>
-      </label>
+        <label class="settings-toggle">
+          <input type="checkbox" id="tabAtlasEnabledInput">
+          <span>
+            <strong>Tab Atlas</strong>
+            <small>Show the knowledge map for source tabs.</small>
+          </span>
+        </label>
+      </div>
 
-      <label class="settings-field" for="themePreferenceInput">
-        <span>
-          <strong>Theme</strong>
-          <small>Use system appearance or choose a fixed theme.</small>
-        </span>
-        <select id="themePreferenceInput">
-          <option value="system">System</option>
-          <option value="light">Light</option>
-          <option value="dark">Dark</option>
-        </select>
-      </label>
+      <div class="settings-section">
+        <h3>Appearance</h3>
+        <label class="settings-field" for="themePreferenceInput">
+          <span>
+            <strong>Theme</strong>
+            <small>Use system appearance or choose a fixed theme.</small>
+          </span>
+          <select id="themePreferenceInput">
+            <option value="system">System</option>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="settings-section">
+        <h3>Data Transfer</h3>
+        <div class="settings-transfer-card">
+          <div>
+            <strong>Tab Hub backup</strong>
+            <small>Move saved Tab Hub data between browsers.</small>
+          </div>
+          <div class="settings-transfer-actions">
+            <button class="action-btn" type="button" data-action="export-backup">Export backup</button>
+            <button class="action-btn" type="button" data-action="import-backup-merge">Import merge</button>
+            <button class="action-btn danger" type="button" data-action="import-backup-replace">Replace data</button>
+          </div>
+        </div>
+
+        <div class="settings-transfer-card">
+          <div>
+            <strong>Open tabs transfer</strong>
+            <small>Move current browser windows, tabs, and groups.</small>
+          </div>
+          <div class="settings-transfer-actions">
+            <button class="action-btn" type="button" data-action="export-open-tabs">Export tabs</button>
+            <button class="action-btn" type="button" data-action="import-open-tabs">Import tabs</button>
+          </div>
+        </div>
+        <input type="file" id="settingsImportBackupInput" accept="application/json,.json" hidden>
+        <input type="file" id="settingsImportOpenTabsInput" accept="application/json,.json" hidden>
+        <div class="settings-message" id="settingsMessage" style="display:none"></div>
+        <div class="settings-error" id="settingsError" style="display:none"></div>
+      </div>
 
       <div class="modal-actions">
         <button class="action-btn" type="button" data-action="close-settings-modal">Cancel</button>

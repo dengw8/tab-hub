@@ -12,7 +12,17 @@
   <main class="popup-shell">
     <header class="popup-header">
       <div class="popup-kicker">Tab Hub</div>
-      <div class="status-dot" id="statusDot" title="Ready"></div>
+      <div class="header-actions">
+        <button class="icon-action" type="button" id="openSettingsButton" aria-label="Settings" title="Settings">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2"
+            stroke="currentColor" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round"
+              d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 0 0-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 0 0-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 0 0-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 0 0-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 0 0 1.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.607 2.296.07 2.572-1.065Z" />
+            <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+          </svg>
+        </button>
+        <div class="status-dot" id="statusDot" title="Ready"></div>
+      </div>
     </header>
 
     <section class="feature-card">
@@ -30,24 +40,17 @@
     </section>
 
     <section class="feature-card">
-      <div class="feature-title">Appearance</div>
-      <div class="feature-subtitle">Match the system or choose a fixed theme.</div>
-      <div class="segmented-control" aria-label="Theme">
-        <button class="segment active" type="button" data-theme-choice="system">System</button>
-        <button class="segment" type="button" data-theme-choice="light">Light</button>
-        <button class="segment" type="button" data-theme-choice="dark">Dark</button>
+      <div class="feature-row">
+        <div>
+          <div class="feature-title">Tab Atlas</div>
+          <div class="feature-subtitle">Knowledge map for source tabs.</div>
+        </div>
+        <label class="switch" title="Toggle Tab Atlas">
+          <input type="checkbox" id="tabAtlasToggle">
+          <span></span>
+        </label>
       </div>
-    </section>
-
-    <section class="feature-card">
-      <div class="feature-title">Data transfer</div>
-      <div class="feature-subtitle">Move Tab Hub data between browsers with a JSON backup.</div>
-      <div class="transfer-actions">
-        <button class="secondary-action" type="button" id="exportDataButton">Export data</button>
-        <button class="secondary-action" type="button" data-import-mode="merge">Import merge</button>
-        <button class="secondary-action danger" type="button" data-import-mode="replace">Replace data</button>
-      </div>
-      <input type="file" id="importFileInput" accept="application/json,.json" hidden>
+      <button class="primary-action" type="button" id="openTabAtlasButton">Open Tab Atlas</button>
     </section>
 
     <div class="popup-message" id="popupMessage" style="display:none"></div>

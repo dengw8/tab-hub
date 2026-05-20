@@ -21,12 +21,12 @@ Non-negotiables:
 ## Repository Map
 
 - `extension/manifest.json`: MV3 manifest, permissions, new tab override, background worker, toolbar popup.
-- `extension/index.html`: new tab shell, dashboard, Tab Stash view, Tab Atlas view, shared modals.
-- `extension/app.js`: main new-tab app. Owns dashboard rendering, Tab Stash UI, Tab Atlas UI, settings modal, and most new-tab store mutations.
+- `extension/index.html`: new tab shell, dashboard, Tab Stash view, Tab Atlas view, shared modals, and Settings modal.
+- `extension/app.js`: main new-tab app. Owns dashboard rendering, Tab Stash UI, Tab Atlas UI, Settings modal, feature toggles, theme preference, Tab Hub backup import/export, open-tabs export, and most new-tab store mutations.
 - `extension/style.css`: main new-tab styles.
-- `extension/background.js`: service worker. Owns badge count, context menus, right-click quick-add flows, inline page modals injected with `chrome.scripting`, and store normalization needed by the worker.
+- `extension/background.js`: service worker. Owns badge count, context menus, right-click quick-add flows, inline page modals injected with `chrome.scripting`, store normalization needed by the worker, and browser-level open-tabs session import.
 - `extension/tree-picker.html` and `extension/tree-picker.js`: popup window used by Tab Stash right-click flow as picker/fallback.
-- `extension/popup.html`, `extension/popup.js`, `extension/popup.css`: toolbar popup for Tab Stash toggle/open, theme, export, import merge, and replace.
+- `extension/popup.html`, `extension/popup.js`, `extension/popup.css`: toolbar popup for high-frequency entry points only: Tab Stash toggle/open, Tab Atlas toggle/open, and opening Settings.
 - `README.md`: human-facing project overview. Keep it accurate when product behavior changes.
 - `docs/superpowers/specs/`: design specs. Useful context, but implementation reality in `extension/` wins.
 
@@ -77,6 +77,23 @@ Important implementation detail: store normalization exists in multiple files be
 - `extension/tree-picker.js` for Tab Stash only
 
 If you change persisted shape or merge behavior, update every relevant normalizer/importer. Do not update only `app.js`.
+
+## Settings And Toolbar Popup
+
+The toolbar popup is intentionally small. It should expose high-frequency controls only:
+
+- Toggle/open Tab Stash.
+- Toggle/open Tab Atlas.
+- Open Settings.
+
+Low-frequency controls belong in the Settings modal inside the Tab Hub new tab page:
+
+- Feature toggles for Tab Stash and Tab Atlas.
+- Appearance theme selection.
+- Tab Hub backup export/import.
+- Open tabs transfer export/import.
+
+The popup opens Settings by navigating or focusing `index.html#settings`. The new-tab app should recognize that hash and show the Settings modal. Avoid moving backup, import, or theme controls back into the popup unless the product direction changes.
 
 ## Dashboard Behavior
 
@@ -202,9 +219,9 @@ Unsupported pages:
 - `about:`, `chrome:`, `chrome-extension:`, `edge:`, and `brave:` pages cannot receive the injected Atlas modal.
 - Current behavior is to log a warning. Do not add a fallback page unless the user explicitly asks.
 
-## Import And Export
+## Tab Hub Backup Import And Export
 
-Toolbar popup owns export/import UI.
+Settings owns Tab Hub backup export/import UI. The toolbar popup should only provide the Settings entry point.
 
 Export:
 
@@ -224,6 +241,38 @@ Merge expectations:
 - Tab Atlas topics merge by sibling name; duplicate URLs in a topic update and move latest.
 - `recentTopicIds` should be filtered to existing topics and capped at 5.
 
+## Open Tabs Transfer
+
+Open tabs transfer is separate from `tabOutStore` backup import/export. It is for moving currently open browser windows and tabs between Chrome, Edge, and Edge Beta.
+
+Manifest/API requirements:
+
+- `extension/manifest.json` must include the `tabGroups` permission.
+- Export uses `chrome.windows.getAll({ populate: true })`, `chrome.tabs`, and `chrome.tabGroups.query()`.
+- Import is handled in `background.js` through runtime message `tab-hub:import-open-tabs-session`.
+- Import uses `chrome.windows.create`, `chrome.tabs.create` / `chrome.tabs.update`, `chrome.tabs.group()`, and `chrome.tabGroups.update()` when available.
+
+Session export format:
+
+```text
+format: "tab-hub-open-tabs-session"
+formatVersion: 1
+windows[]
+  -> tabs[]
+  -> groups[]
+```
+
+Rules:
+
+- Do not store native browser `groupId` as a cross-browser identity. It is only valid in the current browser session.
+- Export a browser-neutral `groupKey` and recreate native groups during import.
+- Chrome, Edge, and Edge Beta should interoperate in both directions when the target browser supports Chromium tab group APIs.
+- If native tab groups are unavailable, import should still open restorable tabs in window/tab order and use a compact summary.
+- Import should create new windows rather than mixing tabs into existing windows.
+- Skip unsupported browser-internal URLs instead of failing the whole import.
+- Keep import result messaging low-distraction: one compact Settings message; detailed skipped URLs and warnings can go to console.
+- Do not write open-tabs transfer data into Tab Stash or Tab Atlas unless the user explicitly asks for that behavior.
+
 ## UI And Interaction Notes
 
 - Follow existing visual language in `style.css`; avoid introducing unrelated design systems.
@@ -241,6 +290,8 @@ Merge expectations:
 - Do not persist the right-click Atlas picker collapse state into topic data.
 - Do not change Tab Atlas topic-name uniqueness to global uniqueness; it is sibling-level uniqueness.
 - Do not remove `recentTopicIds`; it drives the right-click Atlas default selection.
+- Do not move low-frequency Settings controls back into the toolbar popup without an explicit product decision.
+- Do not persist browser-native tab group IDs as portable data; use exported `groupKey` values and recreate native groups on import.
 - Do not add network calls for icons, sync, summaries, or metadata.
 - Do not add a build tool unless the user explicitly asks for a larger refactor.
 

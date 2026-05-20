@@ -104,6 +104,37 @@ body {
   box-shadow: 0 0 0 4px rgba(154, 145, 138, 0.14);
 }
 
+.header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.icon-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--warm-gray);
+  border-radius: 7px;
+  background: var(--surface-muted);
+  color: var(--muted);
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease, transform 0.15s ease;
+}
+
+.icon-action svg {
+  width: 16px;
+  height: 16px;
+}
+
+.icon-action:hover {
+  border-color: var(--hover-border);
+  color: var(--ink);
+  transform: translateY(-1px);
+}
+
 .feature-card {
   position: relative;
   margin-bottom: 10px;
@@ -249,8 +280,12 @@ body.popup-ready .switch span::after {
   margin-top: 12px;
 }
 
-.transfer-actions .secondary-action:first-child {
+.transfer-actions.backup-actions .secondary-action:first-child {
   grid-column: 1 / -1;
+}
+
+.transfer-actions.session-actions {
+  margin-top: 8px;
 }
 
 .secondary-action {
